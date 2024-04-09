@@ -1,3 +1,9 @@
+from torch.utils.data import Dataset
+import numpy as np
+import torch
+import math
+
+
 class BaseDataset(Dataset):
     """ Base object to store core dataset methods """
     def __init__(self,seed=42,subsample=None,drop_spin_up=True,train_ratio=0.75,valid_ratio=0.25,test_ratio=0.0):
