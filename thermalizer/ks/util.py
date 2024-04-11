@@ -81,3 +81,104 @@ def build_train_dataset(config):
             for cc in range(config["ks"]["rollout"]):
                 train_data[config["ks"]["trajectories"]*aa+bb,cc]=torch.tensor(ks_evol[config["ks"]["spinup"]+config["ks"]["decorr_steps"]*bb+cc*config["ks"]["increment"]])
     return train_data
+
+
+class KSPerformance():
+    def __init__(self,config,model,test_data):
+        self.config=config
+        self.model=model
+        self.test_data=test_data
+
+        # use GPUs if available
+        if torch.cuda.is_available():
+            self.device = torch.device('cuda')
+        else:
+            self.device = torch.device('cpu')
+        self.model=self.model.eval()
+        self.model=self.model.to(self.device)
+        self.emu_cached=False
+        self.sim_cached=False
+
+    def _cache_emulator_MSE(self):
+        self.losses=[]
+        criterion=nn.MSELoss()
+        test_state=self.test_data[:,0,:].unsqueeze(1).to(self.device)
+        pred_states=test_state
+        for aa in range(1,test_data.shape[1]):
+            test_state=model(test_state)+test_state
+            pred_states=torch.cat((pred_states,test_state),axis=1)
+            loss=criterion(test_state,self.test_data[:,0,:].unsqueeze(1).to(self.device))
+            self.losses.append(loss.detach().cpu().numpy())
+        self.pred_states=pred_states
+
+    def _cache_sim_MSE(self):
+        ## Get divergence losses for real simulations
+        ks=ks_solver.KS(L=config["ks"]["L"],N=config["ks"]["N"],nsteps=config["ks"]["ratio"]*config["ks"]["test_window"],dt=config["ks"]["dt"])
+        ks.IC(u0=test_data[0][0]+np.random.normal(0,0.00001,128))
+        ks.simulate()
+        ks_evol=np.fft.ifft(ks.vv,axis=-1).real
+        ## Drop numerical timesteps, keep only physical timestep intervals
+        ks_evol=ks_evol[::config["ks"]["ratio"]]
+        
+        for aa in range(1):
+            ks=ks_solver.KS(L=config["ks"]["L"],N=config["ks"]["N"],nsteps=config["ks"]["ratio"]*config["ks"]["test_window"],dt=config["ks"]["dt"])
+            ks.IC(u0=test_data[0][0]+np.random.normal(0,0.00001,128))
+            ks.simulate()
+            ks_evol2=np.fft.ifft(ks.vv,axis=-1).real
+            ## Drop numerical timesteps, keep only physical timestep intervals
+            ks_evol2=ks_evol2[::config["ks"]["ratio"]]
+        
+        self.div_loss=[]
+        sim1=torch.tensor(ks_evol)
+        sim2=torch.tensor(ks_evol2)
+        for aa in range(1,len(ks_evol2)):
+            loss=criterion(sim1[aa],sim2[aa])
+            self.div_loss.append(loss.numpy())
+        return
+
+    def plot_emu_mse(self):
+        if self.emu_cached==False:
+            self._cache_emulator_MSE()
+        fig=plt.figure()
+        plt.semilogy(losses,label="Mse between truth and emulator predictions")
+        plt.xlabel("timestep (#)")
+        plt.ylabel("MSE")
+        plt.legend()
+        return fig
+    
+    def plot_emu_mse_withsim(self):
+        if self.emu_cached==False:
+            self._cache_emulator_MSE()
+        if self.sim_cached==False:
+            self._cache_sim_MSE()
+        fig=plt.figure()
+        plt.semilogy(losses,label="Mse between truth and emulator predictions")
+        plt.semilogy(div_loss,label="Mse between sims with same IC + tiny noise")
+        plt.xlabel("timestep (#)")
+        plt.ylabel("MSE")
+        plt.legend()
+        return fig
+
+    def plot_emu_fields(self,index=1,cutoff=-1):
+        cutoff=900
+        test_sim_num=2
+        fig=plt.figure(figsize=(12,6))
+        plt.subplot(3,1,1)
+        plt.title("True")
+        plt.imshow(self.test_data[index][:cutoff].T.detach().cpu().numpy(),cmap="inferno")
+        plt.colorbar()
+        
+        
+        plt.subplot(3,1,2)
+        plt.title("Emulator")
+        plt.imshow(self.pred_states[index][:cutoff].T.detach().cpu().numpy(),cmap="inferno")
+        plt.colorbar()
+        
+        
+        plt.subplot(3,1,3)
+        plt.title("Residual")
+        plt.imshow(self.pred_states[index][:cutoff].T.detach().cpu().numpy()-self.test_data[index][:cutoff].T.detach().cpu().numpy(),cmap="inferno")
+        plt.colorbar()
+        
+        return fig
+        
