@@ -1,5 +1,5 @@
 import jax
-import xarray as xr
+import xarray
 import jax.numpy as jnp
 import numpy as np
 
