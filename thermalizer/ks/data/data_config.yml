@@ -3,12 +3,10 @@ ks:
   N: 128
   dataset_size: 20000
   save_name: L22_20k.p
-  trajectories: 2
+  trajectories: 4
   increment: 1
   rollout: 5
   dt: 0.01
   Dt: 0.2
-  spinup: 200
+  spinup: 500
   decorr_steps: 200
-  test_sims: 10
-  test_window: 1000 
