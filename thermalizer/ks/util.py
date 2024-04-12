@@ -20,6 +20,7 @@ def plot_training_sim(config):
     plt.colorbar()
     return fig
 
+
 def prepare_test_set(config):
     fig1=plt.figure()
     kespec=np.zeros(config["ks"]["N"]//2+1)
@@ -47,10 +48,8 @@ def prepare_test_set(config):
         plt.xlabel("Timestep # after spinup phase ended")
         test_data[aa]=torch.tensor(ks_evol[config["ks"]["spinup"]:-1])
         
-        
     plt.axvspan(0,config["ks"]["increment"]*config["ks"]["rollout"],color="pink",alpha=0.3)
     plt.xlim(0,config["ks"]["decorr_steps"])
-
 
     ## Plot a single validation sim
     fig2=plt.figure(figsize=(12,1))
@@ -65,6 +64,7 @@ def prepare_test_set(config):
     plt.semilogy(kespec/config["ks"]["test_sims"])
 
     return test_data, fig1, fig2, fig3
+
 
 def build_train_dataset(config):
     train_data=torch.empty(config["ks"]["num_sims"]*config["ks"]["trajectories"],
@@ -84,7 +84,12 @@ def build_train_dataset(config):
 
 
 class KSPerformance():
+    """ Module to evaluate performance of a neural emulator trained on KS data """
     def __init__(self,config,model,test_data):
+        """ config:    config dict
+            model:     trained torch nn module
+            test_data: torch tensor of test data
+        """
         self.config=config
         self.model=model
         self.test_data=test_data
@@ -96,18 +101,21 @@ class KSPerformance():
             self.device = torch.device('cpu')
         self.model=self.model.eval()
         self.model=self.model.to(self.device)
+        self.criterion=nn.MSELoss()
         self.emu_cached=False
         self.sim_cached=False
 
     def _cache_emulator_MSE(self):
+        """ Run emulator, cache prediction tensor, and loss evaluations with respect to true
+            trajectory """
         self.losses=[]
-        criterion=nn.MSELoss()
+        
         test_state=self.test_data[:,0,:].unsqueeze(1).to(self.device)
         pred_states=test_state
         for aa in range(1,test_data.shape[1]):
             test_state=model(test_state)+test_state
             pred_states=torch.cat((pred_states,test_state),axis=1)
-            loss=criterion(test_state,self.test_data[:,0,:].unsqueeze(1).to(self.device))
+            loss=self.criterion(test_state,self.test_data[:,0,:].unsqueeze(1).to(self.device))
             self.losses.append(loss.detach().cpu().numpy())
         self.pred_states=pred_states
 
@@ -132,7 +140,7 @@ class KSPerformance():
         sim1=torch.tensor(ks_evol)
         sim2=torch.tensor(ks_evol2)
         for aa in range(1,len(ks_evol2)):
-            loss=criterion(sim1[aa],sim2[aa])
+            loss=self.criterion(sim1[aa],sim2[aa])
             self.div_loss.append(loss.numpy())
         return
 
@@ -140,7 +148,7 @@ class KSPerformance():
         if self.emu_cached==False:
             self._cache_emulator_MSE()
         fig=plt.figure()
-        plt.semilogy(losses,label="Mse between truth and emulator predictions")
+        plt.semilogy(self.losses,label="Mse between truth and emulator predictions")
         plt.xlabel("timestep (#)")
         plt.ylabel("MSE")
         plt.legend()
@@ -152,8 +160,8 @@ class KSPerformance():
         if self.sim_cached==False:
             self._cache_sim_MSE()
         fig=plt.figure()
-        plt.semilogy(losses,label="Mse between truth and emulator predictions")
-        plt.semilogy(div_loss,label="Mse between sims with same IC + tiny noise")
+        plt.semilogy(self.losses,label="Mse between truth and emulator predictions")
+        plt.semilogy(self.div_loss,label="Mse between sims with same IC + tiny noise")
         plt.xlabel("timestep (#)")
         plt.ylabel("MSE")
         plt.legend()
@@ -181,4 +189,25 @@ class KSPerformance():
         plt.colorbar()
         
         return fig
+
+    def plot_KE_spectrum(self,avg_index=3):
+        """ Plot KE spectrum of truth and emulator predictions """
+        if self.emu_cached==False:
+            self._cache_emulator_MSE()
+        ## Generate KE spectra for truth and emulator predictions
+        kes=torch.abs(torch.fft.rfftn(self.test_data[:,-avg_index:,:]))**2
+        kes=kes.reshape(self.test_data.shape[0]*avg_index,int(kes.shape[-1]))
+        ke_sim=torch.mean(kes,axis=0)
+
+        kes=torch.abs(torch.fft.rfftn(self.pred_states[:,-avg_index:,:]))**2
+        kes=kes.reshape(self.pred_states.shape[0]*avg_index,int(kes.shape[-1]))
+        ke_emu=torch.mean(kes,axis=0)
+
+        fig=plt.figure()
+        plt.title("KE spectra, averaged over last %d timesteps" % avg_index)
+        plt.semilogy(ke_sim.cpu(),label="Simulation")
+        plt.semilogy(ke_emu.detach().cpu(),label="Emulator")
+        plt.legend()
+        return fig
+        
         
