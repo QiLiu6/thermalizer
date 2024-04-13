@@ -32,7 +32,9 @@ def run_kolmogorov_sim(dt,Dt,nsteps,spinup=0,downsample=None,viscosity=1e-3,grid
     trajectory_fn = cfd.funcutils.trajectory(
         cfd.funcutils.repeated(step_fn, 1), nsteps+spinup)
     
-    v0 = cfd.initial_conditions.filtered_velocity_field(jax.random.PRNGKey(42), grid, max_velocity, 4)
+    ## Just want a random seed, so a random key? This is gross
+    rand_key=np.random.randint(0,100000000)
+    v0 = cfd.initial_conditions.filtered_velocity_field(jax.random.PRNGKey(rand_key), grid, max_velocity, 4)
     vorticity0 = cfd.finite_differences.curl_2d(v0).data
     vorticity_hat0 = jnp.fft.rfftn(vorticity0)
     
