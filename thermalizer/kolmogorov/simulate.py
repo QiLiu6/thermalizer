@@ -12,12 +12,18 @@ from jax_cfd.spectral import utils as spectral_utils
 
 def run_kolmogorov_sim(dt,Dt,nsteps,spinup=0,downsample=None,viscosity=1e-3,gridsize=256):
     """ Run kolmogorov sim with a timestep of dt for nsteps
-        returns xarray dataset with *all* snapshots.
+        returns xarray dataset with *all* snapshots. We perform **spatial** downsampling
+        within this function - we will perform **temporal** downsampling outside, in the
+        loop that constructs the training dataset.
+
         dt:         numerical timestep
         Dt:         physical timestep (must be >numerical timestep)
         spinup:     number of numerical timesteps to drop from output
                     dataarray
-        viscosity:  viscosity for NS PDE"""
+        viscosity:  viscosity for NS PDE
+    return:
+        xarray dataset containing snapshots for every timestep
+    """
 
     ratio=int(Dt/dt)
     max_velocity = 7 ## For CFL violation
@@ -65,3 +71,4 @@ def run_kolmogorov_sim(dt,Dt,nsteps,spinup=0,downsample=None,viscosity=1e-3,grid
     }
 
     return xarray.DataArray(traj_real,dims=["time", "x", "y"], coords=coords)
+    
