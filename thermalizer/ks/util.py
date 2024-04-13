@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import torch.nn as nn
 from scipy.stats import pearsonr
 import thermalizer.ks.solver as ks_solver
 from tqdm import tqdm
@@ -8,28 +9,28 @@ from tqdm import tqdm
 
 def plot_training_sim(config):
     ## First test a training sim
-    ks=ks_solver.KS(L=config["ks"]["L"],N=config["ks"]["N"],nsteps=config["ks"]["nsteps"],dt=config["ks"]["dt"])
+    ks=ks_solver.KS(L=config["data"]["L"],N=config["data"]["N"],nsteps=config["data"]["nsteps"],dt=config["data"]["dt"])
     ks.simulate()
     ks_evol=np.fft.ifft(ks.vv,axis=-1).real
     fig=plt.figure(figsize=(12,2))
     plt.imshow(ks_evol.T[:,::config["ks"]["ratio"]],cmap="inferno")
     plt.title("Training sim")
-    plt.axvline(config["ks"]["spinup"])
-    for aa in range(1,config["ks"]["trajectories"]+1):
-        plt.axvline(config["ks"]["decorr_steps"]*aa)
+    plt.axvline(config["data"]["spinup"])
+    for aa in range(1,config["data"]["trajectories"]+1):
+        plt.axvline(config["data"]["decorr_steps"]*aa)
     plt.colorbar()
     return fig
 
 
 def prepare_test_set(config):
     fig1=plt.figure()
-    kespec=np.zeros(config["ks"]["N"]//2+1)
+    kespec=np.zeros(config["data"]["N"]//2+1)
     test_data=torch.empty(config["ks"]["test_sims"],
                         config["ks"]["test_window"],
-                        config["ks"]["N"])
+                        config["data"]["N"])
 
     for aa in tqdm(range(config["ks"]["test_sims"])):
-        ks=ks_solver.KS(L=config["ks"]["L"],N=config["ks"]["N"],nsteps=config["ks"]["ratio"]*(config["ks"]["spinup"]+config["ks"]["test_window"]),dt=config["ks"]["dt"])
+        ks=ks_solver.KS(L=config["data"]["L"],N=config["data"]["N"],nsteps=config["ks"]["ratio"]*(config["data"]["spinup"]+config["ks"]["test_window"]),dt=config["data"]["dt"])
         ks.simulate()
         ks_evol=np.fft.ifft(ks.vv,axis=-1).real
 
@@ -41,22 +42,22 @@ def prepare_test_set(config):
         
         corrs=[]
         ## Plot correlation between timesteps
-        for bb in range(config["ks"]["spinup"],len(ks_evol)-1):
-            corrs.append(pearsonr(ks_evol.T[:,config["ks"]["spinup"]].flatten(),ks_evol.T[:,bb].flatten())[0])
+        for bb in range(config["data"]["spinup"],len(ks_evol)-1):
+            corrs.append(pearsonr(ks_evol.T[:,config["data"]["spinup"]].flatten(),ks_evol.T[:,bb].flatten())[0])
         plt.title("Autocorrelation after spinup - full decorrelation window")
         plt.plot(corrs,color="black",alpha=0.3)
         plt.xlabel("Timestep # after spinup phase ended")
-        test_data[aa]=torch.tensor(ks_evol[config["ks"]["spinup"]:-1])
+        test_data[aa]=torch.tensor(ks_evol[config["data"]["spinup"]:-1])
         
-    plt.axvspan(0,config["ks"]["increment"]*config["ks"]["rollout"],color="pink",alpha=0.3)
-    plt.xlim(0,config["ks"]["decorr_steps"])
+    plt.axvspan(0,config["data"]["increment"]*config["data"]["rollout"],color="pink",alpha=0.3)
+    plt.xlim(0,config["data"]["decorr_steps"])
 
     ## Plot a single validation sim
     fig2=plt.figure(figsize=(12,1))
     plt.title("Full test window")
     plt.imshow(test_data[0].T,cmap="inferno")
-    for aa in range(1,config["ks"]["rollout"]+1):
-        plt.axvline(config["ks"]["increment"]*aa,color="black",linestyle="dashed",alpha=0.6)
+    for aa in range(1,config["data"]["rollout"]+1):
+        plt.axvline(config["data"]["increment"]*aa,color="black",linestyle="dashed",alpha=0.6)
     plt.colorbar()
 
     fig3=plt.figure()
@@ -112,7 +113,7 @@ class KSPerformance():
         
         test_state=self.test_data[:,0,:].unsqueeze(1).to(self.device)
         pred_states=test_state
-        for aa in range(1,test_data.shape[1]):
+        for aa in range(1,self.test_data.shape[1]):
             test_state=model(test_state)+test_state
             pred_states=torch.cat((pred_states,test_state),axis=1)
             loss=self.criterion(test_state,self.test_data[:,0,:].unsqueeze(1).to(self.device))
@@ -122,7 +123,7 @@ class KSPerformance():
     def _cache_sim_MSE(self):
         ## Get divergence losses for real simulations
         ks=ks_solver.KS(L=config["ks"]["L"],N=config["ks"]["N"],nsteps=config["ks"]["ratio"]*config["ks"]["test_window"],dt=config["ks"]["dt"])
-        ks.IC(u0=test_data[0][0]+np.random.normal(0,0.00001,128))
+        ks.IC(u0=self.test_data[0][0]+np.random.normal(0,0.00001,128))
         ks.simulate()
         ks_evol=np.fft.ifft(ks.vv,axis=-1).real
         ## Drop numerical timesteps, keep only physical timestep intervals
@@ -130,7 +131,7 @@ class KSPerformance():
         
         for aa in range(1):
             ks=ks_solver.KS(L=config["ks"]["L"],N=config["ks"]["N"],nsteps=config["ks"]["ratio"]*config["ks"]["test_window"],dt=config["ks"]["dt"])
-            ks.IC(u0=test_data[0][0]+np.random.normal(0,0.00001,128))
+            ks.IC(u0=self.test_data[0][0]+np.random.normal(0,0.00001,128))
             ks.simulate()
             ks_evol2=np.fft.ifft(ks.vv,axis=-1).real
             ## Drop numerical timesteps, keep only physical timestep intervals
