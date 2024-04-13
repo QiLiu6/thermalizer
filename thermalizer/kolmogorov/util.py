@@ -4,6 +4,7 @@ import numpy as np
 import jax_cfd.base.grids as grids
 from jax_cfd.spectral import utils as spectral_utils
 import copy
+import math
 
 
 class fourierGrid():

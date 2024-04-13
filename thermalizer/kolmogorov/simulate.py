@@ -2,8 +2,6 @@ import jax
 import xarray
 import jax.numpy as jnp
 import numpy as np
-import copy
-import math
 
 import jax_cfd.base as cfd
 import jax_cfd.base.grids as grids
