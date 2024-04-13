@@ -2,6 +2,8 @@ import jax
 import xarray
 import jax.numpy as jnp
 import numpy as np
+import copy
+import math
 
 import jax_cfd.base as cfd
 import jax_cfd.base.grids as grids
@@ -38,6 +40,7 @@ def run_kolmogorov_sim(dt,Dt,nsteps,spinup=0,downsample=None,viscosity=1e-3,grid
     vorticity0 = cfd.finite_differences.curl_2d(v0).data
     vorticity_hat0 = jnp.fft.rfftn(vorticity0)
     
+    ## Trajectory here is in Fourier space
     _, trajectory = trajectory_fn(vorticity_hat0)
 
     ## Drop spinup
