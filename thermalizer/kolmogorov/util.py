@@ -53,3 +53,20 @@ class fourierGrid():
             phr[i] *= 2 # include full circle
             
         return phr
+
+def get_ke(omega,fourier_grid):
+    """ For a voriticity field and fourier grid, calculate isotropically averaged
+        KE spectra.
+        omega:        2D tensor of vorticity in real space
+        fourier_grid: Fourier grid object corresponding to the input vorticity field
+    returns:
+        k1d_plot: 1d wavenumber bins (centered)
+        kespec:   KE spectrum in each wavenumber bin
+    """
+    omegah=np.fft.rfftn(omega)
+    grid = grids.Grid((omega.shape[0], omega.shape[1]), domain=((0, 2 * jnp.pi), (0, 2 * jnp.pi)))
+    velocity_solve = spectral_utils.vorticity_to_velocity(grid)
+    vxhat, vyhat = velocity_solve(omegah)
+    KEh=abs(vxhat**2)+abs(vyhat**2)
+    kespec=fourier_grid.get_ispec(KEh)
+    return fourier_grid.k1d_plot,kespec
