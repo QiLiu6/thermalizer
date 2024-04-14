@@ -40,9 +40,9 @@ class BaseDataset(Dataset):
         return
 
     def _subsample(self):
-        """ Take a subsample of """
+        """ Take a subsample of the loaded data. Update len """
         self.x_data=self.x_data[:self.subsample]
-        self.y_data=self.y_data[:self.subsample]
+        self.len=len(self.x_data)
         return
 
     def __len__(self):
@@ -69,9 +69,10 @@ class KSDataset(BaseDataset):
         else:
             self.x_data=self.file_path
         self.len=len(self.x_data)
-        self._get_split_indices()
+
         if self.subsample:
             self._subsample()
+        self._get_split_indices()
             
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
@@ -101,9 +102,10 @@ class KolmogorovDataset(BaseDataset):
             self.x_data=self.file_path
         self.len=len(self.x_data)
         self.x_std=torch.std(self.x_data)
-        self._get_split_indices()
+
         if self.subsample:
             self._subsample()
+        self._get_split_indices()
             
     def __getitem__(self, idx):
         """ Return elements at each index specified by idx. Will rescale to unit
@@ -111,4 +113,4 @@ class KolmogorovDataset(BaseDataset):
             the mean, as we are assuming these fields are already 0 mean """
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        return self.x_data[idx]/ds.x_std
+        return self.x_data[idx]/self.x_std
