@@ -31,7 +31,7 @@ class BaseRegSytem(LightningModule):
     def validation_step(self, batch, batch_idx):
         return self.step(batch,"valid")
 
-class RolloutSystem1D(BaseRegSytem):
+class RolloutSystem(BaseRegSytem):
     """ Regress over multiple timesteps """
     def __init__(self,network,config:dict):
         super().__init__(network,config)
@@ -54,7 +54,7 @@ class RolloutSystem1D(BaseRegSytem):
         self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True)     
         return loss
 
-class RolloutResidualSystem1D(BaseRegSytem):
+class RolloutResidualSystem(BaseRegSytem):
     """ Regress over multiple timesteps """
     def __init__(self,network,config:dict):
         super().__init__(network,config)
