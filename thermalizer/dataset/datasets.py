@@ -48,6 +48,7 @@ class BaseDataset(Dataset):
     def __len__(self):
         return self.len
 
+
 class KSDataset(BaseDataset):
     """
     Dataset for Kuramoto-Sivashinky solutions
@@ -78,7 +79,7 @@ class KSDataset(BaseDataset):
         return self.x_data[idx]
 
 
-class KolmogorovDataset(datasets.BaseDataset):
+class KolmogorovDataset(BaseDataset):
     """
     Dataset for Kolmogorov flow trajectories
     """
