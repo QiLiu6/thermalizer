@@ -76,3 +76,38 @@ class KSDataset(BaseDataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         return self.x_data[idx]
+
+
+class KolmogorovDataset(datasets.BaseDataset):
+    """
+    Dataset for Kolmogorov flow trajectories
+    """
+    def __init__(self,file_path,seed=42,subsample=None,train_ratio=0.75,valid_ratio=0.25,test_ratio=0.0):
+        """
+        file_path:     path to data
+        seed:          random seed used to create train/valid/test splits
+        subsample:     None or int: if int, subsample the dataset to a total of N=subsample maps
+        train_ratio:
+        valid_ratio:
+        test_ratio:
+        """
+        
+        super().__init__(subsample=subsample,seed=seed,train_ratio=train_ratio,valid_ratio=valid_ratio,test_ratio=test_ratio)
+        self.file_path=file_path
+        if isinstance(self.file_path,str):
+            self.x_data=torch.load(self.file_path)
+        else:
+            self.x_data=self.file_path
+        self.len=len(self.x_data)
+        self.x_std=torch.std(self.x_data)
+        self._get_split_indices()
+        if self.subsample:
+            self._subsample()
+            
+    def __getitem__(self, idx):
+        """ Return elements at each index specified by idx. Will rescale to unit
+            variance using the std of the full dataset. NB that we are not rescaling
+            the mean, as we are assuming these fields are already 0 mean """
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        return self.x_data[idx]/ds.x_std
