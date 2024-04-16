@@ -2,6 +2,7 @@ from pytorch_lightning import LightningModule
 import torch
 import torch.nn as nn
 
+
 class BaseRegSytem(LightningModule):
     """ Base class to implement common methods. We leave the definition of the step method to child classes """
     def __init__(self,network,config:dict):
@@ -75,3 +76,4 @@ class RolloutResidualSystem(BaseRegSytem):
             
         self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True)     
         return loss
+        
