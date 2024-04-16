@@ -31,13 +31,14 @@ config["optimization"]={}
 config["input_channels"]=1
 config["output_channels"]=1
 config["activation"]="ReLU"
-config["batch_norm"]="GroupNorm"
+config["batch_norm"]=True
 config["conv_layers"]=5
 config["file_path"]="/scratch/cp3759/thermalizer_data/kolmogorov/ratio10_inc1/all.pt"
 config["subsample"]=None
+config["save_name"]="model_weights.pt"
 
 config["optimization"]["epochs"]=120
-config["optimization"]["lr"]=0.01
+config["optimization"]["lr"]=0.0005
 config["optimization"]["wd"]=0.05
 config["optimization"]["scheduler"]=None
 config["optimization"]["batch_size"]=64
@@ -92,7 +93,7 @@ trainer = pl.Trainer(
 trainer.fit(system, train_loader, valid_loader)
 
 ## Compare sim to emulator rollout for N passes.
-N_passes=1000
+N_passes=3000
 dt=0.001
 Dt=0.01
 spinup=5000
@@ -110,13 +111,13 @@ plt.subplot(3,3,1)
 plt.title("MSE")
 plt.loglog(anim.mse)
 plt.xlabel("# passes")
+
 plt.subplot(3,3,2)
 plt.title("Correlation")
 plt.plot(anim.correlation,label="Corr(sim, emu)")
 plt.plot(anim.autocorrelation,label="Sim Corr(t0,t)")
 plt.xlabel("# passes")
 plt.legend()
-
 
 plt.subplot(3,3,3)
 plt.title("KE spectra after %d timesteps (normalised)" % steps)
@@ -145,7 +146,6 @@ plt.colorbar()
 figure_metrics=wandb.Image(fig_metrics)
 wandb.log({"Power spectrum": figure_metrics})
 
-## Field visualiastion
-
+model.save_model()
 wandb.finish()
 print("done")
