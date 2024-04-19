@@ -25,7 +25,8 @@ class ChannelShuffle(nn.Module):
 class ConvBnSiLu(nn.Module):
     def __init__(self,in_channels,out_channels,kernel_size,stride=1,padding=0):
         super().__init__()
-        self.module=nn.Sequential(nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding),
+        self.module=nn.Sequential(nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,
+                                                    padding=padding,padding_mode="circular"),
                                   nn.BatchNorm2d(out_channels),
                                   nn.SiLU(inplace=True))
     def forward(self,x):
