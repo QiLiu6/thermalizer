@@ -77,7 +77,8 @@ class RolloutResidualSystem(BaseRegSytem):
         return loss
 
 class SlicedScoreSystem(BaseRegSytem):
-    """ Regress over multiple timesteps """
+    """ Sliced score matching loss with variance reduction
+        eq 8 from https://arxiv.org/abs/1905.07088 """
     def __init__(self,network,config:dict):
         super().__init__(network,config)
 
