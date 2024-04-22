@@ -31,6 +31,7 @@ class BaseRegSytem(LightningModule):
     def validation_step(self, batch, batch_idx):
         return self.step(batch,"valid")
 
+
 class RolloutSystem(BaseRegSytem):
     """ Regress over multiple timesteps """
     def __init__(self,network,config:dict):
@@ -54,6 +55,7 @@ class RolloutSystem(BaseRegSytem):
         self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True)     
         return loss
 
+
 class RolloutResidualSystem(BaseRegSytem):
     """ Regress over multiple timesteps """
     def __init__(self,network,config:dict):
@@ -75,6 +77,7 @@ class RolloutResidualSystem(BaseRegSytem):
             
         self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True)     
         return loss
+
 
 class SlicedScoreSystem(BaseRegSytem):
     """ Sliced score matching loss with variance reduction
@@ -120,3 +123,30 @@ class SlicedScoreSystem(BaseRegSytem):
         
         return loss
         
+        
+class DenoisingScoreSystem(BaseRegSytem):
+    """ Denoising score matching loss
+        eq 7 from https://www.iro.umontreal.ca/~vincentp/Publications/smdae_techreport.pdf """
+    def __init__(self,network,config:dict):
+        super().__init__(network,config)
+        self.sigma=config["sigma"]
+
+    def validation_step(self, batch, batch_idx):
+        """ Enable gradient tracking on validation step
+            -- disabled by lightning by default """
+        torch.set_grad_enabled(True)
+        return self.step(batch,"valid")
+
+    def step(self,batch,kind):
+        """ Evaluate loss function """
+        ## Our CCNs work with arbitrary numbers of input/output channels
+        ## so our tensor shape has to be [batch_size,num channels,Nx,Ny]
+        ## but our dataset is structured [batch_size,rollout number, Nx, Ny]
+        batch_size=batch.shape[0]
+        x=batch[:,0,:,:].unsqueeze(1)
+        noise=torch.rand(x.shape,device="cuda")*self.sigma**2
+        pred=self(x+noise)
+
+        loss=self.criterion(pred,noise/self.sigma**2)
+        self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True)
+        return loss
