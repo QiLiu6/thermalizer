@@ -22,7 +22,6 @@ class BaseRegSytem(LightningModule):
         else:
             return {"optimizer": optimizer}
         
-
     def step(self,batch,kind):
         raise NotImplementedError("To be defined by child class")
 
@@ -75,5 +74,48 @@ class RolloutResidualSystem(BaseRegSytem):
             loss+=loss_dt
             
         self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True)     
+        return loss
+
+class SlicedScoreSystem(BaseRegSytem):
+    """ Regress over multiple timesteps """
+    def __init__(self,network,config:dict):
+        super().__init__(network,config)
+
+    def validation_step(self, batch, batch_idx):
+        """ Enable gradient tracking on validation step
+            -- disabled by lightning by default """
+        torch.set_grad_enabled(True)
+        return self.step(batch,"valid")
+
+    def step(self,batch,kind):
+        """ Evaluate loss function """
+        ## Our CCNs work with arbitrary numbers of input/output channels
+        ## so our tensor shape has to be [batch_size,num channels,Nx,Ny]
+        ## but our dataset is structured [batch_size,rollout number, Nx, Ny]
+        batch_size=batch.shape[0]
+        x=batch[:,0,:,:].unsqueeze(1)
+        x=x.requires_grad_()
+
+        ## Draw random vector for slicing
+        random_vec=torch.rand(batch_size,x.shape[-1]**2,device="cuda",requires_grad=True)
+
+        y=self(x)
+        y=y.view(batch_size,x.shape[-1]**2)
+        prod=torch.einsum("ij,ij->i",y,random_vec)
+        prod=torch.sum(prod)
+
+        ## \nabla_\mathbf{x}\mathbf{s}_\theta(\mathbf{x}_i)\mathbf{v}_{ij}
+        grads=torch.autograd.grad(prod, x,retain_graph=True)[0]
+        ## Reshape to vector
+        grads=grads.view(batch_size,x.shape[-1]**2)
+
+        loss1=torch.mean(torch.einsum("ij,ij->i",random_vec,grads))
+        loss2=torch.mean(0.5*(torch.sum(y,axis=1)**2))
+        loss=loss1+loss2
+
+        self.log(f"{kind}_loss1", loss1, on_step=False, on_epoch=True)  
+        self.log(f"{kind}_loss2", loss2, on_step=False, on_epoch=True) 
+        self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True) 
+        
         return loss
         
