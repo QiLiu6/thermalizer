@@ -1,6 +1,7 @@
 from pytorch_lightning import LightningModule
 import torch
 import torch.nn as nn
+from torch.func import functional_call, vmap, grad
 
 
 class BaseRegSytem(LightningModule):
@@ -97,25 +98,28 @@ class SlicedScoreSystem(BaseRegSytem):
         ## so our tensor shape has to be [batch_size,num channels,Nx,Ny]
         ## but our dataset is structured [batch_size,rollout number, Nx, Ny]
         batch_size=batch.shape[0]
-        x=batch[:,0,:,:].unsqueeze(1)
-        x=x.requires_grad_()
+        data=batch[:,0,:,:].unsqueeze(1)
+        data=data.requires_grad_()
 
         ## Draw random vector for slicing
-        random_vec=torch.rand(batch_size,x.shape[-1]**2,device="cuda",requires_grad=True)
-
-        y=self(x)
-        y=y.view(batch_size,x.shape[-1]**2)
-        prod=torch.einsum("ij,ij->i",y,random_vec)
-        prod=torch.sum(prod)
-
-        ## \nabla_\mathbf{x}\mathbf{s}_\theta(\mathbf{x}_i)\mathbf{v}_{ij}
-        grads=torch.autograd.grad(prod, x,retain_graph=True)[0]
-        ## Reshape to vector
-        grads=grads.view(batch_size,x.shape[-1]**2)
-
-        loss1=torch.mean(torch.einsum("ij,ij->i",random_vec,grads))
-        loss2=torch.mean(0.5*(torch.sum(y,axis=1)**2))
-        loss=loss1+loss2
+        vectors=torch.rand(batch_size,data.shape[-1]**2,device="cuda",requires_grad=True)
+        
+        params = dict(self.network.named_parameters())
+        
+        def calc_output(params, data, vector):
+        	y_single = functional_call(self.network, params, data)
+        	y_single = y_single.view(data.shape[-1]**2)
+        	prod = torch.dot(y_single, vector)
+        	return prod, y_single
+        	
+        grads, y = vmap(grad(calc_output, argnums=(1), has_aux=True), in_dims=(None, 0, 0))(params, data, vectors) #returns shape [64, 1, 28, 28], [64, 784]
+        
+        grads = grads.reshape(-1, data.shape[-1]**2) #flatten
+        
+        loss1 = torch.mean(vmap(torch.dot, in_dims=(0,0))(vectors, grads))
+        loss2 = torch.mean(vmap(torch.linalg.norm, in_dims=(0))(y))
+        
+        loss = loss1 + loss2
 
         self.log(f"{kind}_loss1", loss1, on_step=False, on_epoch=True)  
         self.log(f"{kind}_loss2", loss2, on_step=False, on_epoch=True) 
