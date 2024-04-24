@@ -6,9 +6,92 @@ import seaborn as sns
 from scipy.stats import pearsonr
 import matplotlib.animation as animation
 from IPython.display import HTML
-
 import thermalizer.kolmogorov.util as util
 
+
+class thermalize_kolmogorov():
+    def __init__(self,test_suite,model_emu,model_therm,thermalize_delay=100,thermalize_interval=5,thermalize_timesteps=2):
+        self.test_suite=test_suite/model_emu.config["field_std"]
+        self.model_emu=model_emu
+        self.model_therm=model_therm
+        self.thermalize_delay=thermalize_delay
+        self.thermalize_interval=thermalize_interval
+        self.thermalize_timesteps=thermalize_timesteps
+
+        ## Set up field tensors
+        self.emu=torch.zeros(self.test_suite.shape)
+        self.therm=torch.zeros(self.test_suite.shape)
+
+        ## Ensure models are in eval
+        self.model_emu.eval()
+        self.model_therm.eval()
+        
+        if torch.cuda.is_available():
+            self.device=torch.device('cuda')
+            ## Put models on GPU
+            self.model_emu=self.model_emu.to(self.device)
+            self.model_therm=self.model_therm.to(self.device)
+            ## Put tensors on GPU
+            self.test_suite=self.test_suite.to(self.device)
+            self.emu=self.emu.to(self.device)
+            self.therm=self.therm.to(self.device)
+
+        ## Set t=0 to be the same
+        self.emu[:,0,:,:]=self.test_suite[:,0,:,:]
+        self.therm[:,0,:,:]=self.test_suite[:,0,:,:]
+
+        self._init_metrics()
+
+    def _init_metrics(self):
+        ## Set up metric tensors
+        self.mse_autp=[]
+        self.mse_emu=[]
+        self.mse_therm=[]
+
+        self.autocorr=[]
+        self.corr_emu=[]
+        self.corr_therm=[]
+
+        self.grid=util.fourierGrid(64)
+        self.ke_true=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1],len(self.grid.k1d_plot))
+        self.ke_emu=torch.zeros(self.ke_true.shape)
+        self.ke_therm=torch.zeros(self.ke_true.shape)
+
+        return
+
+    @torch.no_grad()
+    def _evolve(self):
+        for aa in tqdm(range(1,len(self.test_suite[1]))):
+            ## Step fields forward
+            emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1)
+            self.emu[:,aa,:,:]=(self.model_emu(emu_unsq)+emu_unsq).squeeze()
+
+            therm_unsq=self.therm[:,aa-1,:,:].unsqueeze(1)
+            self.therm[:,aa,:,:]=(self.model_emu(therm_unsq)+therm_unsq).squeeze()
+
+            should_thermalize = (aa % self.thermalize_interval == 0) and (aa>self.thermalize_delay)
+            if should_thermalize:
+                thermed=self.model_therm.denoising(self.therm[:,aa,:,:].unsqueeze(1),self.thermalize_timesteps)
+                self.therm[:,aa,:,:]=thermed.squeeze()
+
+    def _KE_spectra(self):
+        ## Move to cpu for KE spectra calculation
+        self.test_suite=self.test_suite.to("cpu")
+        self.emu=self.emu.to("cpu")
+        self.therm=self.therm.to("cpu")
+        for aa in tqdm(range(1,len(self.test_suite[1]))):
+            for bb in range(0,len(self.test_suite[0])):
+                _,ke=util.get_ke(self.test_suite[aa,bb],self.grid)
+                self.ke_true[aa,bb]=torch.tensor(ke)
+                _,ke=util.get_ke(self.emu[aa,bb],self.grid)
+                self.ke_emu[aa,bb]=torch.tensor(ke)
+                _,ke=util.get_ke(self.therm[aa,bb],self.grid)
+                self.ke_therm[aa,bb]=torch.tensor(ke)
+
+        ## Move to back to gpu
+        self.test_suite=self.test_suite.to(self.device)
+        self.emu=self.emu.to(self.device)
+        self.therm=self.therm.to(self.device)
 
 class KolmogorovAnimation():
     def __init__(self,ds,model,fps=10,nSteps=1000,normalise=True,cache_residuals=False,savestring=None):
