@@ -148,7 +148,7 @@ class DenoisingScoreSystem(BaseRegSytem):
         ## but our dataset is structured [batch_size,rollout number, Nx, Ny]
         batch_size=batch.shape[0]
         x=batch[:,0,:,:].unsqueeze(1)
-        noise=torch.rand(x.shape,device="cuda")*self.sigma**2
+        noise=torch.randn(x.shape,device="cuda")*self.sigma**2
         pred=self(x+noise)
 
         loss=self.criterion(pred,noise/self.sigma**2)
