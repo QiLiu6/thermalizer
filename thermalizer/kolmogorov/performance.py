@@ -43,10 +43,11 @@ class thermalize_kolmogorov():
         self._init_metrics()
 
     def _init_metrics(self):
+        self.mseloss=torch.nn.MSELoss(reduction="none")
         ## Set up metric tensors
-        self.mse_autp=[]
-        self.mse_emu=[]
-        self.mse_therm=[]
+        self.mse_auto=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
+        self.mse_emu=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
+        self.mse_therm=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
 
         self.autocorr=[]
         self.corr_emu=[]
@@ -74,6 +75,14 @@ class thermalize_kolmogorov():
                 thermed=self.model_therm.denoising(self.therm[:,aa,:,:].unsqueeze(1),self.thermalize_timesteps)
                 self.therm[:,aa,:,:]=thermed.squeeze()
 
+            ## MSE metrics
+            loss=self.mseloss(therm_rollout.test_suite[:,0],therm_rollout.test_suite[:,aa])
+            self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2))
+            loss=self.mseloss(therm_rollout.test_suite[:,aa],therm_rollout.emu[:,aa])
+            self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2))
+            loss=self.mseloss(therm_rollout.test_suite[:,aa],therm_rollout.therm[:,aa])
+            self.mse_therm[:,aa]=torch.mean(loss,dim=(1,2))
+
     def _KE_spectra(self):
         ## Move to cpu for KE spectra calculation
         self.test_suite=self.test_suite.to("cpu")
@@ -87,7 +96,7 @@ class thermalize_kolmogorov():
                 self.ke_emu[aa,bb]=torch.tensor(ke)
                 _,ke=util.get_ke(self.therm[aa,bb],self.grid)
                 self.ke_therm[aa,bb]=torch.tensor(ke)
-
+  
         ## Move to back to gpu
         self.test_suite=self.test_suite.to(self.device)
         self.emu=self.emu.to(self.device)
