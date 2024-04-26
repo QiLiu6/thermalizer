@@ -2,9 +2,9 @@ import numpy as np
 import io
 import torch
 import pickle
-import pyqg_explorer.models.diffusion as diffusion
-import pyqg_explorer.models.fcnn as fcnn
-import pyqg_explorer.models.unet as unet
+import thermalizer.models.diffusion as diffusion
+import thermalizer.models.fcnn as fcnn
+import thermalizer.models.unet as unet
 import xarray as xr
 
 """ Store some miscellaneous helper methods that are frequently used """
