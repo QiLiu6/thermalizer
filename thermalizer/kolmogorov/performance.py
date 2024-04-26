@@ -337,3 +337,31 @@ class ScoreAnimation():
         self.ax2.set_array(image)
         self.ax2.set_clim(-lim,lim)
         return 
+
+def plot_thermalizer_norms(test_snap,thermalizer,num_trials=50,noise_steps=200,noise_coeff=1):
+    """ For a given test image, add incremental amounts of noise to it. Pass this image
+        to the thermalizer, and then plot the L2 norm of the score field that the thermalizer
+        returns """
+    thermalizer=thermalizer.to("cuda")
+    thermalizer.eval()
+    num_trials=50
+    imgs=torch.tensor(test_snap.unsqueeze(0).repeat(num_trials,1,1),device="cuda")
+    noise_levels=np.logspace(-2,2,noise_steps)
+    norms=torch.zeros(num_trials,noise_steps)
+    noises=torch.randn(size=(num_trials,test_snap.shape[0],test_snap.shape[1]),device="cuda")
+    
+    with torch.no_grad():
+        for aa in range(noise_steps):
+            therm_out=thermalizer((imgs+noise_levels[aa]*noises).unsqueeze(1)).squeeze()
+            norms_level=torch.einsum("ijk,ijk->i",therm_out,therm_out)
+            norms[:,aa]=norms_level
+    
+    norms2=norms.detach().cpu()
+    fig=plt.figure()
+    for aa in range(len(norms)):
+        plt.loglog(noise_levels,norms[aa],color="gray",alpha=0.4)
+    plt.xlabel("noise coeff")
+    plt.ylabel("L2 norm of score field")
+    plt.title(r"$\parallel s_\theta(\mathbf{x})\parallel^2$ as we apply noise to a true image")
+    return fig
+    
