@@ -3,7 +3,7 @@ import io
 import torch
 import pickle
 import thermalizer.models.diffusion as diffusion
-import thermalizer.models.fcnn as fcnn
+import thermalizer.models.cnn as cnn
 import thermalizer.models.unet as unet
 import xarray as xr
 
@@ -34,9 +34,9 @@ def load_model(file_string):
         if model_dict["config"]["arch"]=="unet":
             model=unet.U_net(model_dict["config"])
         else:
-            model=fcnn.FCNN(model_dict["config"])
+            model=cnn.FCNN(model_dict["config"])
     except:
-        model=fcnn.FCNN(model_dict["config"])
+        model=cnn.FCNN(model_dict["config"])
 
     ## Load state_dict
     model.load_state_dict(model_dict["state_dict"])
