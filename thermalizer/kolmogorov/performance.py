@@ -102,6 +102,7 @@ class thermalize_kolmogorov():
         self.emu=self.emu.to(self.device)
         self.therm=self.therm.to(self.device)
 
+
 class KolmogorovAnimation():
     def __init__(self,ds,model,fps=10,nSteps=1000,normalise=True,cache_residuals=False,savestring=None):
         """ Run an emulator alongside a simulated trajectory, for a RESIDUAL emulator.
@@ -251,3 +252,88 @@ class KolmogorovAnimation():
         
         return 
         
+
+class ScoreAnimation():
+    """ Animation to plot the score as we add incrementally increasing Gaussian noise
+        to a held-out sample. """
+    def __init__(self,img,thermalizer,noise_coeff=1,fps=10,nSteps=1000,savestring=None,skip=1):
+        """ img=torch tensor of a single kolmogorov field
+            thermalizer=trained thermalizer model
+            noise_coeff=coefficient of the most amount of noise we want to add. We will incrementally
+            move to this amount of noise in a linear fashion.
+            """
+        self.img=img ## torch tensor
+        self.img_plot=self.img
+        
+        self.thermalizer=thermalizer
+        self.therm_img=img
+        self.noise_coeff=noise_coeff
+        self.fps=fps
+        self.nSteps=nSteps
+        self.skip=skip
+        self.nFrames=int(self.nSteps)
+        self.noise=np.linspace(0,self.noise_coeff,self.nFrames)
+        self.savestring=None
+        self.noise_add=torch.rand(self.img.shape)
+        self.norms=torch.zeros(self.nFrames)
+
+    def _inc_noise(self):
+        self.img_plot=self.img+self.noise[self.i]*self.noise_add
+        self.therm_img=self.thermalizer(self.img_plot.unsqueeze(0).unsqueeze(0)).detach()
+        self.norms[self.i]=torch.linalg.norm(self.therm_img.flatten())
+        
+    
+    def animate(self):
+        fig, axs = plt.subplots(1, 2,figsize=(14,6))
+        ## Upper layer
+        self.ax1=axs[0].imshow(self.img, cmap=sns.cm.icefire,interpolation='none')
+        fig.colorbar(self.ax1, ax=axs[0])
+        axs[0].set_xticks([]); axs[0].set_yticks([])
+        axs[0].set_title("Input image")
+
+        self.ax2=axs[1].imshow(self.therm_img, cmap=sns.cm.icefire,interpolation='none')
+        fig.colorbar(self.ax2, ax=axs[1])
+        axs[1].set_xticks([]); axs[1].set_yticks([])
+        axs[1].set_title("Thermalizer output")
+
+        self.time_text=axs[0].text(-2,-2,"")
+        
+        
+        #fig.tight_layout()
+        
+        anim = animation.FuncAnimation(
+                                       fig, 
+                                       self.animate_func, 
+                                       frames = self.nFrames,
+                                       interval = 1000 / self.fps, # in ms
+                                       )
+        plt.close()
+        
+        if self.savestring:
+            print("saving")
+            # saving to m4 using ffmpeg writer 
+            writervideo = animation.FFMpegWriter(fps=self.fps) 
+            anim.save('%s.mp4' % self.savestring, writer=writervideo) 
+            plt.close()
+        else:
+            return HTML(anim.to_html5_video())
+        
+    def animate_func(self,i):
+        if i % self.fps == 0:
+            print( '.', end ='' )
+            
+        self.i=self.skip*i
+        self._inc_noise()
+        self.time_text.set_text("%.2f Noised amount" % (self.noise[self.i]))
+    
+        ## Set image and colorbar for each panel
+        image=self.img_plot.cpu().numpy()
+        lim=np.max(np.abs(image))
+        self.ax1.set_array(image)
+        self.ax1.set_clim(-lim,lim)
+        
+        image=self.therm_img.squeeze().numpy()
+        lim=np.max(np.abs(image))
+        self.ax2.set_array(image)
+        self.ax2.set_clim(-lim,lim)
+        return 
