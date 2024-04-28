@@ -7,6 +7,7 @@ from scipy.stats import pearsonr
 import matplotlib.animation as animation
 from IPython.display import HTML
 import thermalizer.kolmogorov.util as util
+from tqdm import tqdm
 
 
 ## NB can prob unifiy the score and DDPM classes with a common parent
@@ -82,11 +83,11 @@ class ThermalizeKolmogorovScore():
                     self.therm[:,aa,:,:]+=thermed.squeeze()*0.5*self.thermalize_h+math.sqrt(self.thermalize_h)*z
 
             ## MSE metrics
-            loss=self.mseloss(therm_rollout.test_suite[:,0],therm_rollout.test_suite[:,aa])
+            loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
             self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2))
-            loss=self.mseloss(therm_rollout.test_suite[:,aa],therm_rollout.emu[:,aa])
+            loss=self.mseloss(self.test_suite[:,aa],self.emu[:,aa])
             self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2))
-            loss=self.mseloss(therm_rollout.test_suite[:,aa],therm_rollout.therm[:,aa])
+            loss=self.mseloss(self.test_suite[:,aa],self.therm[:,aa])
             self.mse_therm[:,aa]=torch.mean(loss,dim=(1,2))
 
     def _KE_spectra(self):
@@ -107,6 +108,7 @@ class ThermalizeKolmogorovScore():
         self.test_suite=self.test_suite.to(self.device)
         self.emu=self.emu.to(self.device)
         self.therm=self.therm.to(self.device)
+
 
 class ThermalizeKolmogorovDDPM():
     def __init__(self,test_suite,model_emu,model_therm,thermalize_delay=100,thermalize_interval=5,thermalize_timesteps=2):
@@ -175,11 +177,11 @@ class ThermalizeKolmogorovDDPM():
                 self.therm[:,aa,:,:]=thermed.squeeze()
 
             ## MSE metrics
-            loss=self.mseloss(therm_rollout.test_suite[:,0],therm_rollout.test_suite[:,aa])
+            loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
             self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2))
-            loss=self.mseloss(therm_rollout.test_suite[:,aa],therm_rollout.emu[:,aa])
+            loss=self.mseloss(self.test_suite[:,aa],self.emu[:,aa])
             self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2))
-            loss=self.mseloss(therm_rollout.test_suite[:,aa],therm_rollout.therm[:,aa])
+            loss=self.mseloss(self.test_suite[:,aa],self.therm[:,aa])
             self.mse_therm[:,aa]=torch.mean(loss,dim=(1,2))
 
     def _KE_spectra(self):
