@@ -80,7 +80,7 @@ class RolloutResidualSystem(BaseRegSytem):
         return loss
 
 
-class SlicedScoreSystem(BaseRegSytem):
+class SlicedScoreSystem(systems.BaseRegSytem):
     """ Sliced score matching loss with variance reduction
         eq 8 from https://arxiv.org/abs/1905.07088 """
     def __init__(self,network,config:dict):
@@ -102,7 +102,11 @@ class SlicedScoreSystem(BaseRegSytem):
         data=data.requires_grad_()
 
         ## Draw random vector for slicing
-        vectors=torch.rand(batch_size,data.shape[-1]**2,device="cuda",requires_grad=True)
+        vectors=torch.randn(batch_size,data.shape[-1]**2,device="cuda",requires_grad=True)
+        ## Normalise vector
+        vectors=torch.randn(128,64**2,device="cuda",requires_grad=True)
+        norms=torch.linalg.norm(vectors,dim=-1)
+        vectors=vectors/norms.unsqueeze(1)
         
         params = dict(self.network.named_parameters())
         
@@ -115,7 +119,7 @@ class SlicedScoreSystem(BaseRegSytem):
         grads, y = vmap(grad(calc_output, argnums=(1), has_aux=True), in_dims=(None, 0, 0))(params, data, vectors) #returns shape [64, 1, 28, 28], [64, 784]
         
         grads = grads.reshape(-1, data.shape[-1]**2) #flatten
-        
+
         loss1 = torch.mean(vmap(torch.dot, in_dims=(0,0))(vectors, grads))
         loss2 = torch.mean(vmap(torch.linalg.norm, in_dims=(0))(y))
         
