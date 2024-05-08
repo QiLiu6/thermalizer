@@ -1,3 +1,8 @@
+import torch.nn as nn
+import os
+import pickle
+
+
 def process_block(latent_channels):
     """ Processor block, with dilated CNNs """
     process_block=nn.Sequential(nn.Conv2d(latent_channels,latent_channels,kernel_size=3,stride=1,padding="same",padding_mode='circular',dilation=1),nn.BatchNorm2d(latent_channels),nn.ReLU(),
@@ -27,6 +32,8 @@ class DRN(nn.Module):
         self.process4=process_block(self.latent_channels)
         
     def forward(self,x):
+        if len(x.shape)==3:
+            x=x.unsqueeze(0)
         x=self.conv_encode(x)
         x=self.process1(x)+x
         x=self.process2(x)+x
