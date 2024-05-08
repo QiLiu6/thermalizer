@@ -2,6 +2,7 @@ import torch.nn as nn
 import numpy as np
 import os
 import pickle
+import torch
 
 class CNN1D(nn.Module):
     def __init__(self):
@@ -140,16 +141,18 @@ class RegressorCNN(nn.Module):
             blocks.extend(make_block(32,self.config["output_channels"],3,'False',False))
         self.conv = nn.Sequential(*blocks)
         self.linear1=nn.Linear(64*64,64)
+        self.act= nn.ReLU()
         self.linear2=nn.Linear(64,1)
+        self.sigmoid=nn.Sigmoid()
 
     def forward(self, x):
         if len(x.shape)==3:
             x=x.unsqueeze(0)
         x = self.conv(x)
         x = torch.flatten(x, 1)
-        x = self.linear_output(x)
-        x = 
-        
+        x = self.act(self.linear1(x))
+        x = self.linear2(x)
+        x = self.sigmoid(x)
         return x
 
     def save_model(self):
@@ -162,6 +165,21 @@ class RegressorCNN(nn.Module):
         save_dict["state_dict"]=self.state_dict() ## Dict containing optimised weights and biases
         save_dict["config"]=self.config           ## Dict containing config for the dataset and model
         save_string=os.path.join(self.config["save_path"],self.config["save_name"])
+        with open(save_string, 'wb') as handle:
+            pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print("Model saved as %s" % save_string)
+        return
+
+    def save_model(self):
+        """ Save the model config, and optimised weights and biases. We create a dictionary
+        to hold these two sub-dictionaries, and save it as a pickle file """
+        if self.config["save_path"] is None:
+            print("No save path provided, not saving")
+            return
+        save_dict={}
+        save_dict["state_dict"]=self.state_dict() ## Dict containing optimised weights and biases
+        save_dict["config"]=self.config           ## Dict containing config for the dataset and model
+        save_string=os.path.join(self.config["save_path"],self.config["save_name2"])
         with open(save_string, 'wb') as handle:
             pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
         print("Model saved as %s" % save_string)
