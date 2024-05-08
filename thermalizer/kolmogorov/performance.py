@@ -10,6 +10,83 @@ import thermalizer.kolmogorov.util as util
 from tqdm import tqdm
 
 
+class EmulatorRollout():
+    """ Run a batch of emulator rollouts along test trajectories """
+    def __init__(self,test_suite,model_emu):
+        """ test_suite: torch tensor of test data with shape [batch, snapshot, Nx, Ny], where
+                        snapshots are taken 10 numerical timesteps apart
+            model_emu:  a trained pytorch CNN emulator of the residuals, over 10 numerical timesteps apart
+        """
+        self.test_suite=test_suite/model_emu.config["field_std"]
+        self.model_emu=model_emu
+
+        ## Set up field tensors
+        self.emu=torch.zeros(self.test_suite.shape)
+
+        ## Ensure models are in eval
+        self.model_emu.eval()
+        
+        if torch.cuda.is_available():
+            self.device=torch.device('cuda')
+            ## Put models on GPU
+            self.model_emu=self.model_emu.to(self.device)
+            ## Put tensors on GPU
+            self.test_suite=self.test_suite.to(self.device)
+            self.emu=self.emu.to(self.device)
+
+        ## Set t=0 to be the same
+        self.emu[:,0,:,:]=self.test_suite[:,0,:,:]
+
+        self._init_metrics()
+
+    def _init_metrics(self):
+        self.mseloss=torch.nn.MSELoss(reduction="none")
+        ## Set up metric tensors
+        self.mse_auto=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
+        self.mse_emu=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
+
+        self.autocorr=[]
+        self.corr_emu=[]
+
+        self.grid=util.fourierGrid(64)
+        self.ke_true=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1],len(self.grid.k1d_plot))
+        self.ke_emu=torch.zeros(self.ke_true.shape)
+
+        return
+
+    @torch.no_grad()
+    def _evolve(self):
+        for aa in tqdm(range(1,len(self.test_suite[1]))):
+            ## Step fields forward
+            emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1)
+            self.emu[:,aa,:,:]=(self.model_emu(emu_unsq)+emu_unsq).squeeze()
+
+            ## MSE metrics
+            loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
+            self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2))
+            loss=self.mseloss(self.test_suite[:,aa],self.emu[:,aa])
+            self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2))
+
+    def _KE_spectra(self):
+        ## Move to cpu for KE spectra calculation
+        self.test_suite=self.test_suite.to("cpu")
+        self.emu=self.emu.to("cpu")
+        self.therm=self.therm.to("cpu")
+        for aa in tqdm(range(1,len(self.test_suite[1]))):
+            for bb in range(0,len(self.test_suite[0])):
+                _,ke=util.get_ke(self.test_suite[aa,bb],self.grid)
+                self.ke_true[aa,bb]=torch.tensor(ke)
+                _,ke=util.get_ke(self.emu[aa,bb],self.grid)
+                self.ke_emu[aa,bb]=torch.tensor(ke)
+                _,ke=util.get_ke(self.therm[aa,bb],self.grid)
+                self.ke_therm[aa,bb]=torch.tensor(ke)
+  
+        ## Move to back to gpu
+        self.test_suite=self.test_suite.to(self.device)
+        self.emu=self.emu.to(self.device)
+        self.therm=self.therm.to(self.device)
+
+
 ## NB can prob unifiy the score and DDPM classes with a common parent
 ## but if we end up ditching DDPM, we can just delete that. Lets see how
 ## score-matched tests go
