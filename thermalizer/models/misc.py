@@ -6,6 +6,7 @@ import thermalizer.models.diffusion as diffusion
 import thermalizer.models.cnn as cnn
 import thermalizer.models.unet as unet
 import xarray as xr
+import math
 
 """ Store some miscellaneous helper methods that are frequently used """
 
@@ -58,3 +59,63 @@ def load_diffusion_model(file_string):
     diffusion_model=diffusion.Diffusion(model_dict["config"], model=model_cnn)
     return diffusion_model
 
+
+class FieldNoiser():
+    """ Forward diffusion module for various different noise schedulers """
+    def __init__(self,timesteps,scheduler):
+        self.timesteps=timesteps
+        self.scheduler=scheduler
+        #print(self.timesteps)
+
+        if self.scheduler=="cosine":
+            self.betas=self._cosine_variance_schedule(self.timesteps)
+        elif self.scheduler=="linear":
+            self.betas=self._linear_variance_schedule(self.timesteps)
+        elif self.scheduler=="sigmoid":
+            self.betas=self._sigmoid_variance_schedule(self.timesteps)
+
+        self.alphas=1.-self.betas
+        self.alphas_cumprod=torch.cumprod(self.alphas,dim=-1)
+        self.sqrt_alphas_cumprod=torch.sqrt(self.alphas_cumprod)
+        self.sqrt_one_minus_alphas_cumprod=torch.sqrt(1.-self.alphas_cumprod)
+
+    def _cosine_variance_schedule(self,timesteps,epsilon= 0.008):
+        steps=torch.linspace(0,timesteps,steps=timesteps+1,dtype=torch.float32)
+        f_t=torch.cos(((steps/timesteps+epsilon)/(1.0+epsilon))*math.pi*0.5)**2
+        betas=torch.clip(1.0-f_t[1:]/f_t[:timesteps],0.0,0.999)
+        return betas
+
+    def __linear_variance_schedule(self,timesteps):
+        betas=torch.linspace(0,1,steps=timesteps+1,dtype=torch.float32)
+        return betas
+
+    def _linear_variance_schedule(self,timesteps):
+        """
+        linear schedule, proposed in original ddpm paper
+        """
+        scale = 1000 / timesteps
+        beta_start = scale * 0.0001
+        beta_end = scale * 0.02
+        return torch.linspace(beta_start, beta_end, timesteps, dtype = torch.float64)
+        
+    def _sigmoid_variance_schedule(self,timesteps, start = -3, end = 3, tau = 1, clamp_min = 1e-5):
+        """
+        sigmoid schedule
+        proposed in https://arxiv.org/abs/2212.11972 - Figure 8
+        better for images > 64x64, when used during training
+        """
+        steps = timesteps + 1
+        t = torch.linspace(0, timesteps, steps, dtype = torch.float64) / timesteps
+        v_start = torch.tensor(start / tau).sigmoid()
+        v_end = torch.tensor(end / tau).sigmoid()
+        alphas_cumprod = (-((t * (end - start) + start) / tau).sigmoid() + v_end) / (v_end - v_start)
+        alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
+        betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
+        return torch.clip(betas, 0, 0.999)
+
+    def forward_diffusion(self,x_0,t,noise):
+        """ Add noise to a clean field for t noise timesteps """
+        assert x_0.shape==noise.shape, "Noise and fields have different shapes"
+        #q(x_{t}|x_{0})
+        return self.sqrt_alphas_cumprod.gather(-1,t).reshape(x_0.shape[0],1,1,1)*x_0+ \
+                self.sqrt_one_minus_alphas_cumprod.gather(-1,t).reshape(x_0.shape[0],1,1,1)*noise
