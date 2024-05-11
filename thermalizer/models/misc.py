@@ -74,10 +74,19 @@ class FieldNoiser():
         elif self.scheduler=="sigmoid":
             self.betas=self._sigmoid_variance_schedule(self.timesteps)
 
+
         self.alphas=1.-self.betas
         self.alphas_cumprod=torch.cumprod(self.alphas,dim=-1)
         self.sqrt_alphas_cumprod=torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod=torch.sqrt(1.-self.alphas_cumprod)
+
+        if torch.cuda.is_available():
+            self.device=torch.device('cuda')
+            self.betas=self.betas.to(self.device)
+            self.alphas=self.alphas.to(self.device)
+            self.alphas_cumprod=self.alphas_cumprod.to(self.device)
+            self.sqrt_alphas_cumprod=self.sqrt_alphas_cumprod.to(self.device)
+            self.sqrt_one_minus_alphas_cumprod=self.sqrt_one_minus_alphas_cumprod.to(self.device)
 
     def _cosine_variance_schedule(self,timesteps,epsilon= 0.008):
         steps=torch.linspace(0,timesteps,steps=timesteps+1,dtype=torch.float32)
