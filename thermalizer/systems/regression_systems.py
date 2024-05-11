@@ -2,6 +2,7 @@ from pytorch_lightning import LightningModule
 import torch
 import torch.nn as nn
 from torch.func import functional_call, vmap, grad
+import thermalizer.models.misc as misc
 
 
 class BaseRegSytem(LightningModule):
@@ -80,7 +81,7 @@ class RolloutResidualSystem(BaseRegSytem):
         return loss
 
 
-class SlicedScoreSystem(systems.BaseRegSytem):
+class SlicedScoreSystem(BaseRegSytem):
     """ Sliced score matching loss with variance reduction
         eq 8 from https://arxiv.org/abs/1905.07088 """
     def __init__(self,network,config:dict):
@@ -103,8 +104,6 @@ class SlicedScoreSystem(systems.BaseRegSytem):
 
         ## Draw random vector for slicing
         vectors=torch.randn(batch_size,data.shape[-1]**2,device="cuda",requires_grad=True)
-        ## Normalise vector
-        vectors=torch.randn(128,64**2,device="cuda",requires_grad=True)
         norms=torch.linalg.norm(vectors,dim=-1)
         vectors=vectors/norms.unsqueeze(1)
         
@@ -131,7 +130,76 @@ class SlicedScoreSystem(systems.BaseRegSytem):
         
         return loss
         
-        
+class NoiseRegression(BaseRegSytem):
+    """ CNN to predict noise level - adding various amounts of Gaussian noise to samples
+        and regressing on the added noise coefficient.
+        For every training sample, we train on both the zero noise field and a random amount
+        of additive noise between 0 and 1 """
+    def __init__(self,network,config:dict):
+        super().__init__(network,config)
+        self.fieldnoiser=misc.FieldNoiser(config["timesteps"],config["noise_scheduler"])
+        self.automatic_optimization = False
+
+    def training_step(self,batch,kind):
+        """ Evaluate loss function """
+        opt = self.optimizers()
+        ## Our CCNs work with arbitrary numbers of input/output channels
+        ## so our tensor shape has to be [batch_size,num channels,Nx,Ny]
+        ## but our dataset is structured [batch_size,rollout number, Nx, Ny]
+        batch=batch[:,0,:,:].unsqueeze(1)
+
+        t=torch.randint(0,1000,(batch.shape[0],),device="cuda")
+        noise=torch.randn_like(batch,device="cuda")
+        x_t=self.fieldnoiser.forward_diffusion(batch,t,noise)
+        t=t.float()/self.config["timesteps"]
+
+        ## Evaluate on noised fields
+        preds=self(x_t)
+        noised_loss=self.criterion(preds.squeeze(),t)
+        opt.zero_grad()
+        self.manual_backward(noised_loss)
+        opt.step()
+
+        self.log("train_noised_loss", noised_loss, on_step=False, on_epoch=True)
+
+        if self.config["clean_loss"]:
+            ## Now evaluate on clean fields
+            preds=self(batch)
+            clean_loss=self.criterion(preds.squeeze(),torch.zeros_like(t))
+            opt.zero_grad()
+            self.manual_backward(clean_loss)
+            opt.step()
+            self.log(f"train_clean_loss", clean_loss, on_step=False, on_epoch=True) 
+
+        return
+
+    def validation_step(self,batch):
+        """ Evaluate loss function """
+        opt = self.optimizers()
+        ## Our CCNs work with arbitrary numbers of input/output channels
+        ## so our tensor shape has to be [batch_size,num channels,Nx,Ny]
+        ## but our dataset is structured [batch_size,rollout number, Nx, Ny]
+        batch=batch[:,0,:,:].unsqueeze(1)
+
+        t=torch.randint(0,1000,(batch.shape[0],),device="cuda")
+        noise=torch.randn_like(batch,device="cuda")
+        x_t=self.fieldnoiser.forward_diffusion(batch,t,noise)
+        t=t.float()/self.config["timesteps"]
+
+        ## Evaluate on noised fields
+        preds=self(x_t)
+        noised_loss=self.criterion(preds.squeeze(),t)
+        self.log("valid_noised_loss", noised_loss, on_step=False, on_epoch=True)
+
+        if self.config["clean_loss"]:
+            ## Now evaluate on clean fields
+            preds=self(batch)
+            clean_loss=self.criterion(preds.squeeze(),torch.zeros_like(t))
+            self.log("valid_clean_loss", clean_loss, on_step=False, on_epoch=True) 
+
+        return
+
+
 class DenoisingScoreSystem(BaseRegSytem):
     """ Denoising score matching loss
         eq 7 from https://www.iro.umontreal.ca/~vincentp/Publications/smdae_techreport.pdf """
