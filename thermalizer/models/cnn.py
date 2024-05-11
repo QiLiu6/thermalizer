@@ -58,6 +58,7 @@ class FCNN(nn.Module):
         '''
         super().__init__()
         self.config=config
+        self.config["model_type"]="CNN"
 
         blocks = []
         ## If the conv_layers key is missing, we are running
@@ -113,11 +114,12 @@ class RegressorCNN(FCNN):
         Used to estimate noise levels in fields
         '''
         super().__init__(config)
-        self.config["arch"]="RegressorCNN"
+        self.config["model_type"]="RegressorCNN"
         self.linear1=nn.Linear(64*64,64)
         self.act= nn.ReLU()
         self.linear2=nn.Linear(64,1)
-        self.sigmoid=nn.Sigmoid()
+        if self.config["sigmoid"]==True:
+            self.sigmoid=nn.Sigmoid()
 
     def forward(self, x):
         if len(x.shape)==3:
@@ -126,7 +128,8 @@ class RegressorCNN(FCNN):
         x = torch.flatten(x, 1)
         x = self.act(self.linear1(x))
         x = self.linear2(x)
-        x = self.sigmoid(x)
+        if self.config["sigmoid"]==True:
+            x = self.sigmoid(x)
         return x
 
 class VectorCNN(nn.Module):

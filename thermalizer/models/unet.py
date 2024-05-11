@@ -200,3 +200,36 @@ class Unet(nn.Module):
             pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
         print("Model saved as %s" % save_string)
         return
+
+class UnetRegressor(Unet):
+    def __init__(self,config):
+        '''
+        Inherit Unet from img->img arch. Add a final fully connected layer for
+        regression purposes. We do not enable time embeddings for regression tasks
+        '''
+        super().__init__(config)
+        self.config["model_type"]="RegressorUnet"
+        ## hardcoding 64x64 for now..
+        self.linear1=nn.Linear(64*64,64)
+        self.act= nn.ReLU()
+        self.linear2=nn.Linear(64,1)
+        if self.config["sigmoid"]==True:
+            self.sigmoid=nn.Sigmoid()
+
+    def forward(self, x):
+        x=self.init_conv(x)
+        encoder_shortcuts=[]
+        for encoder_block in self.encoder_blocks:
+            x,x_shortcut=encoder_block(x,t=None)
+            encoder_shortcuts.append(x_shortcut)
+        x=self.mid_block(x)
+        encoder_shortcuts.reverse()
+        for decoder_block,shortcut in zip(self.decoder_blocks,encoder_shortcuts):
+            x=decoder_block(x,shortcut,t=None)
+        x=self.final_conv(x)
+        x = torch.flatten(x, 1)
+        x = self.act(self.linear1(x))
+        x = self.linear2(x)
+        if self.config["sigmoid"]==True:
+            x = self.sigmoid(x)
+        return x
