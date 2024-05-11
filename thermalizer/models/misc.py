@@ -32,8 +32,8 @@ def load_model(file_string):
 
     ## Check if unet, otherwise assume FCNN
     try:
-        if model_dict["config"]["arch"]=="unet":
-            model=unet.U_net(model_dict["config"])
+        if model_dict["config"]["model_type"]=="Unet":
+            model=unet.Unet(model_dict["config"])
         else:
             model=cnn.FCNN(model_dict["config"])
     except:
