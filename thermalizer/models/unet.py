@@ -5,7 +5,6 @@ import os
 import pickle
 import copy
 from itertools import *
-import pyqg_explorer.util.transforms as transforms
 
 ###########################################################################
 ############################## Imported UNET ##############################
@@ -98,7 +97,8 @@ class EncoderBlock(nn.Module):
         self.conv0=nn.Sequential(*[ResidualBottleneck(in_channels,in_channels) for i in range(3)],
                                     ResidualBottleneck(in_channels,out_channels//2))
 
-        self.time_mlp=TimeMLP(embedding_dim=time_embedding_dim,hidden_dim=out_channels,out_dim=out_channels//2)
+        if time_embedding_dim is not None:
+            self.time_mlp=TimeMLP(embedding_dim=time_embedding_dim,hidden_dim=out_channels,out_dim=out_channels//2)
         self.conv1=ResidualDownsample(out_channels//2,out_channels)
     
     def forward(self,x,t=None):
@@ -116,7 +116,8 @@ class DecoderBlock(nn.Module):
         self.conv0=nn.Sequential(*[ResidualBottleneck(in_channels,in_channels) for i in range(3)],
                                     ResidualBottleneck(in_channels,in_channels//2))
 
-        self.time_mlp=TimeMLP(embedding_dim=time_embedding_dim,hidden_dim=in_channels,out_dim=in_channels//2)
+        if time_embedding_dim is not None:
+            self.time_mlp=TimeMLP(embedding_dim=time_embedding_dim,hidden_dim=in_channels,out_dim=in_channels//2)
         self.conv1=ResidualBottleneck(in_channels//2,out_channels//2)
 
     def forward(self,x,x_shortcut,t=None):
@@ -141,14 +142,19 @@ class Unet(nn.Module):
         assert isinstance(self.config["dim_mults"],(list,tuple))
         assert self.config["base_dim"]%2==0
         self.config["model_type"]="Unet"
+        if "time_embedding_dim" in config:
+            self.time_embedding_dim=self.config["time_embedding_dim"]
+            self.timesteps=self.config["timesteps"]
+            self.time_embedding=nn.Embedding(self.config["timesteps"],self.config["time_embedding_dim"])
+        else:
+            self.time_embedding_dim=None
 
         channels=self._cal_channels(self.config["base_dim"],self.config["dim_mults"])
 
         self.init_conv=ConvBnSiLu(self.config["input_channels"],self.config["base_dim"],3,1,1)
-        self.time_embedding=nn.Embedding(self.config["timesteps"],self.config["time_embedding_dim"])
 
-        self.encoder_blocks=nn.ModuleList([EncoderBlock(c[0],c[1],self.config["time_embedding_dim"]) for c in channels])
-        self.decoder_blocks=nn.ModuleList([DecoderBlock(c[1],c[0],self.config["time_embedding_dim"]) for c in channels[::-1]])
+        self.encoder_blocks=nn.ModuleList([EncoderBlock(c[0],c[1],self.time_embedding_dim) for c in channels])
+        self.decoder_blocks=nn.ModuleList([DecoderBlock(c[1],c[0],self.time_embedding_dim) for c in channels[::-1]])
     
         self.mid_block=nn.Sequential(*[ResidualBottleneck(channels[-1][1],channels[-1][1]) for i in range(2)],
                                         ResidualBottleneck(channels[-1][1],channels[-1][1]//2))
@@ -194,4 +200,3 @@ class Unet(nn.Module):
             pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
         print("Model saved as %s" % save_string)
         return
-
