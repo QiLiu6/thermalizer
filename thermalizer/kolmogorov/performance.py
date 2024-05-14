@@ -59,7 +59,9 @@ class EmulatorRollout():
         for aa in tqdm(range(1,len(self.test_suite[1]))):
             ## Step fields forward
             emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1)
-            self.emu[:,aa,:,:]=(self.model_emu(emu_unsq)+emu_unsq).squeeze()
+            preds=self.model_emu(emu_unsq)
+            means=torch.mean(preds,axis=(-1,-2))
+            self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze()
 
             ## MSE metrics
             loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
