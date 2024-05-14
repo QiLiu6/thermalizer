@@ -245,10 +245,14 @@ class ThermalizeKolmogorovDDPM():
         for aa in tqdm(range(1,len(self.test_suite[1]))):
             ## Step fields forward
             emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1)
-            self.emu[:,aa,:,:]=(self.model_emu(emu_unsq)+emu_unsq).squeeze()
+            preds=self.model_emu(emu_unsq)
+            means=torch.mean(preds,axis=(-1,-2))
+            self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze()
 
             therm_unsq=self.therm[:,aa-1,:,:].unsqueeze(1)
-            self.therm[:,aa,:,:]=(self.model_emu(therm_unsq)+therm_unsq).squeeze()
+            preds=self.model_emu(therm_unsq)
+            means=torch.mean(preds,axis=(-1,-2))
+            self.therm[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+therm_unsq).squeeze()
 
             should_thermalize = (aa % self.thermalize_interval == 0) and (aa>self.thermalize_delay)
             if should_thermalize:
