@@ -5,6 +5,7 @@ import pickle
 import thermalizer.models.diffusion as diffusion
 import thermalizer.models.cnn as cnn
 import thermalizer.models.unet as unet
+import thermalizer.models.unet_modern as munet
 import xarray as xr
 import math
 
@@ -34,6 +35,8 @@ def load_model(file_string):
     try:
         if model_dict["config"]["model_type"]=="Unet":
             model=unet.Unet(model_dict["config"])
+        elif model_dict["config"]["model_type"]=="ModernUnet":
+            model=munet.ModernUnet(model_dict["config"])
         else:
             model=cnn.FCNN(model_dict["config"])
     except:
