@@ -62,10 +62,17 @@ class RolloutResidualSystem(BaseRegSytem):
     """ Regress over multiple timesteps """
     def __init__(self,network,config:dict):
         super().__init__(network,config)
+        if "add_noise" in self.config:
+            self.add_noise=self.config["add_noise"]
+        else:
+            self.add_noise=None
 
     def step(self,batch,kind):
         """ Evaluate loss function """
         x_data=batch
+        if self.add_noise:
+            noise=torch.randn_like(x_data)*self.add_noise
+            x_data=x_data+noise
         loss=0
         for aa in range(0,x_data.shape[1]-1):
             if aa==0:
