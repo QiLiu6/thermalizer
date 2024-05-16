@@ -9,6 +9,8 @@ from torch import nn, einsum
 import torch.nn.functional as F
 from torch.special import expm1
 
+## stolen from https://github.com/lucidrains/denoising-diffusion-pytorch/blob/main/denoising_diffusion_pytorch/simple_diffusion.py
+
 def exists(val):
     return val is not None
 
@@ -521,4 +523,3 @@ def normalize_to_neg_one_to_one(img):
 def unnormalize_to_zero_to_one(t):
     return (t + 1) * 0.5
 
-    
