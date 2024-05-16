@@ -13,15 +13,19 @@ class Diffusion(nn.Module):
         
         super().__init__()
         self.config=config
-        self.timesteps=self.config["timesteps"]
+        if "timesteps" in self.config:
+            self.timesteps=self.config["timesteps"]
         self.in_channels=self.config["input_channels"]
         self.image_size=self.config["image_size"]
-        self.noise_sampling_coeff=config["noise_sampling_coeff"]
+        if "noise_sampling_coeff" in self.config:
+            self.noise_sampling_coeff=config["noise_sampling_coeff"]
+        else:
+            self.noise_sampling_coeff=None
         self.silence=silence
         self.sampled_times=[]
         
 
-        betas=self._cosine_variance_schedule(self.config["timesteps"])
+        betas=self._cosine_variance_schedule(self.timesteps)
 
         alphas=1.-betas
         alphas_cumprod=torch.cumprod(alphas,dim=-1)
@@ -54,15 +58,14 @@ class Diffusion(nn.Module):
         return pred_noise,x_t,t
 
     @torch.no_grad()
-    def sampling(self,n_samples,clipped_reverse_diffusion=True,device="cuda"):
+    def sampling(self,n_samples,clipped_reverse_diffusion=None,device="cuda"):
         """ Generate fresh samples from pure noise """
         x_t=torch.randn((n_samples,self.in_channels,self.image_size,self.image_size)).to(device)
         for i in tqdm(range(self.timesteps-1,-1,-1),desc="Sampling",disable=self.silence):
             noise=torch.randn_like(x_t).to(device)
             t=torch.tensor([i for _ in range(n_samples)]).to(device)
-
-            if clipped_reverse_diffusion:
-                x_t=self._reverse_diffusion_with_clip(x_t,t,noise)
+            if clipped_reverse_diffusion is not None:
+                x_t=self._reverse_diffusion_with_clip(x_t,t,noise,clipped_reverse_diffusion)
             else:
                 x_t=self._reverse_diffusion(x_t,t,noise)
 
@@ -88,7 +91,7 @@ class Diffusion(nn.Module):
 
     def _forward_diffusion(self,x_0,t,noise):
         assert x_0.shape==noise.shape
-        #q(x_{t}|x_{t-1})
+        #q(x_{t}|x_{0})
         return self.sqrt_alphas_cumprod.gather(-1,t).reshape(x_0.shape[0],1,1,1)*x_0+ \
                 self.sqrt_one_minus_alphas_cumprod.gather(-1,t).reshape(x_0.shape[0],1,1,1)*noise
 
@@ -116,7 +119,7 @@ class Diffusion(nn.Module):
         return mean+std*noise 
 
     @torch.no_grad()
-    def _reverse_diffusion_with_clip(self,x_t,t,noise): 
+    def _reverse_diffusion_with_clip(self,x_t,t,noise,clamp=1.): 
         '''
         p(x_{0}|x_{t}),q(x_{t-1}|x_{0},x_{t})->mean,std
 
@@ -128,7 +131,7 @@ class Diffusion(nn.Module):
         beta_t=self.betas.gather(-1,t).reshape(x_t.shape[0],1,1,1)
         
         x_0_pred=torch.sqrt(1. / alpha_t_cumprod)*x_t-torch.sqrt(1. / alpha_t_cumprod - 1.)*pred
-        x_0_pred.clamp_(-1., 1.)
+        x_0_pred.clamp_(-clamp,clamp)
 
         if t.min()>0:
             alpha_t_cumprod_prev=self.alphas_cumprod.gather(-1,t-1).reshape(x_t.shape[0],1,1,1)
