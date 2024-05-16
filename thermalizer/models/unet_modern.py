@@ -2,6 +2,8 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 from torch import nn
+import os
+import pickle
 
 ACTIVATION_REGISTRY = {
     "relu": nn.ReLU(),
@@ -200,7 +202,6 @@ class ModernUnet(nn.Module):
         is_attn (list): List of booleans indicating whether to use attention blocks
         mid_attn (bool): Whether to use attention block in the middle block
         n_blocks (int): Number of residual blocks in each resolution
-        use1x1 (bool): Whether to use 1x1 convolutions in the initial and final layers
     """
 
     def __init__(
@@ -209,6 +210,7 @@ class ModernUnet(nn.Module):
     ) -> None:
         super().__init__()
         self.config=config
+        self.config["model_type"]="ModernUnet"
         self.n_input_scalar_components = self.config["input_channels"]
         self.n_output_scalar_components = self.config["output_channels"]
         self.hidden_channels =self.config["hidden_channels"]
@@ -321,3 +323,18 @@ class ModernUnet(nn.Module):
         #    orig_shape[0], -1, (self.n_output_scalar_components + self.n_output_vector_components * 2), *orig_shape[3:]
         #)
         return x
+
+    def save_model(self):
+        """ Save the model config, and optimised weights and biases. We create a dictionary
+        to hold these two sub-dictionaries, and save it as a pickle file """
+        if self.config["save_path"] is None:
+            print("No save path provided, not saving")
+            return
+        save_dict={}
+        save_dict["state_dict"]=self.state_dict() ## Dict containing optimised weights and biases
+        save_dict["config"]=self.config           ## Dict containing config for the dataset and model
+        save_string=os.path.join(self.config["save_path"],self.config["save_name"])
+        with open(save_string, 'wb') as handle:
+            pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print("Model saved as %s" % save_string)
+        return
