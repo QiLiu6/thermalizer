@@ -221,3 +221,18 @@ class ResNet(nn.Module):
         x = self.conv_out2(x)
 
         return x
+
+    def save_model(self):
+        """ Save the model config, and optimised weights and biases. We create a dictionary
+        to hold these two sub-dictionaries, and save it as a pickle file """
+        if self.config["save_path"] is None:
+            print("No save path provided, not saving")
+            return
+        save_dict={}
+        save_dict["state_dict"]=self.state_dict() ## Dict containing optimised weights and biases
+        save_dict["config"]=self.config           ## Dict containing config for the dataset and model
+        save_string=os.path.join(self.config["save_path"],self.config["save_name"])
+        with open(save_string, 'wb') as handle:
+            pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print("Model saved as %s" % save_string)
+        return
