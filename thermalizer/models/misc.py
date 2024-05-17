@@ -1,15 +1,27 @@
 import numpy as np
 import io
 import torch
+from torch import nn
 import pickle
 import thermalizer.models.diffusion as diffusion
 import thermalizer.models.cnn as cnn
 import thermalizer.models.unet as unet
 import thermalizer.models.unet_modern as munet
+import thermalizer.models.drn as drn
+
 import xarray as xr
 import math
 
 """ Store some miscellaneous helper methods that are frequently used """
+
+## Activation registry for resnet modules
+ACTIVATION_REGISTRY = {
+    "relu": nn.ReLU(),
+    "silu": nn.SiLU(),
+    "gelu": nn.GELU(),
+    "tanh": nn.Tanh(),
+    "sigmoid": nn.Sigmoid(),
+}
 
 
 ########################## Loading models ################################
@@ -31,12 +43,14 @@ def load_model(file_string):
         else:
             model_dict = CPU_Unpickler(fp).load()
 
-    ## Check if unet, otherwise assume FCNN
+    ## Check if unet, modern unet, or drn. Otherwise load default CNN
     try:
         if model_dict["config"]["model_type"]=="Unet":
             model=unet.Unet(model_dict["config"])
         elif model_dict["config"]["model_type"]=="ModernUnet":
             model=munet.ModernUnet(model_dict["config"])
+        elif model_dict["config"]["model_type"]=="DRN":
+            model=drn.ResNet(model_dict["config"])
         else:
             model=cnn.FCNN(model_dict["config"])
     except:
