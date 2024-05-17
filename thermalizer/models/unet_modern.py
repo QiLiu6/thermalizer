@@ -1,18 +1,11 @@
 from typing import List, Optional, Tuple, Union
-
+import thermalizer.models.misc as misc
 import torch
 from torch import nn
 import os
 import pickle
 
-ACTIVATION_REGISTRY = {
-    "relu": nn.ReLU(),
-    "silu": nn.SiLU(),
-    "gelu": nn.GELU(),
-    "tanh": nn.Tanh(),
-    "sigmoid": nn.Sigmoid(),
-}
-
+## Adapted from the beautiful repo at https://github.com/pdearena/pdearena/blob/main/pdearena/modules/twod_unet.py
 
 class ResidualBlock(nn.Module):
     """Wide Residual Blocks used in modern Unet architectures.
@@ -34,7 +27,7 @@ class ResidualBlock(nn.Module):
         n_groups: int = 1,
     ):
         super().__init__()
-        self.activation: nn.Module = ACTIVATION_REGISTRY.get(activation, None)
+        self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(activation, None)
         if self.activation is None:
             raise NotImplementedError(f"Activation {activation} not implemented")
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=(3, 3), padding=(1, 1))
@@ -192,7 +185,7 @@ class ModernUnet(nn.Module):
 
     This is a modern U-Net architecture with wide-residual blocks and spatial attention blocks
 
-    Args:
+    Config keys:
         n_input_scalar_components (int): Number of scalar components in the model
         n_output_scalar_components (int): Number of output scalar components in the model
         hidden_channels (int): Number of channels in the hidden layers
@@ -213,8 +206,8 @@ class ModernUnet(nn.Module):
         self.config["model_type"]="ModernUnet"
         self.n_input_scalar_components = self.config["input_channels"]
         self.n_output_scalar_components = self.config["output_channels"]
-        self.hidden_channels =self.config["hidden_channels"]
-        self.activation: nn.Module = ACTIVATION_REGISTRY.get(self.config["activation"], None)
+        self.hidden_channels = self.config["hidden_channels"]
+        self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(self.config["activation"], None)
         n_resolutions = len(self.config["dim_mults"])
         n_channels = self.config["hidden_channels"]
         
