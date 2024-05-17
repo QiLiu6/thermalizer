@@ -106,11 +106,11 @@ class DilatedBasicBlock(nn.Module):
 class ResNet(nn.Module):
     """Class to support ResNet like feedforward architectures
 
-    Args:
+    Config keys:
         n_input_scalar_components (int): Number of input scalar components in the model
         n_output_scalar_components (int): Number of output scalar components in the model
         block (Callable): BasicBlock or DilatedBasicBlock or FourierBasicBlock
-        num_blocks (List[int]): Number of blocks in each layer
+        num_blocks (List[int]): Number of dilated blocks in each layer, and number of layers
         hidden_channels (int): Number of channels in the hidden layers
         activation (str): Activation function to use
         norm (bool): Whether to use normalization
@@ -120,18 +120,16 @@ class ResNet(nn.Module):
 
     def __init__(
         self,
-        n_input_scalar_components: int,
-        n_output_scalar_components: int,
-        block,
-        num_blocks: list,
-        hidden_channels: int = 64,
-        activation: str = "gelu",
-        norm: bool = True,
+        config,
     ):
         super().__init__()
-        self.n_input_scalar_components = n_input_scalar_components
-        self.n_output_scalar_components = n_output_scalar_components
-        self.in_planes = hidden_channels
+
+        self.config=config
+        self.config["model_type"]="DRN"
+        self.n_input_scalar_components = self.config["input_channels"]
+        self.n_output_scalar_components = self.config["output_channels"]
+        self.in_planes = self.config["hidden_channels"]
+        self.num_blocks = self.config["num_blocks"]
         insize = self.n_input_scalar_components
         self.conv_in1 = nn.Conv2d(
             insize,
@@ -161,17 +159,17 @@ class ResNet(nn.Module):
         self.layers = nn.ModuleList(
             [
                 self._make_layer(
-                    block,
+                    DilatedBasicBlock,
                     self.in_planes,
-                    num_blocks[i],
+                    self.num_blocks[i],
                     stride=1,
-                    activation=activation,
-                    norm=norm,
+                    activation=self.config["activation"],
+                    norm=self.config["norm"],
                 )
-                for i in range(len(num_blocks))
+                for i in range(len(self.num_blocks))
             ]
         )
-        self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(activation, None)
+        self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(self.config["activation"], None)
         if self.activation is None:
             raise NotImplementedError(f"Activation {activation} not implemented")
 
