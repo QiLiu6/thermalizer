@@ -33,6 +33,8 @@ class fourierGrid():
         self.kappa=jnp.sqrt(self.kappa2)
 
     def get_ispec(self,field):
+        """ Calculate isotropically averaged spectra for a given input 2d field. The input field
+            must be in Fourier space """
         ## Array to output isotropically averaged wavenumbers
         phr = np.zeros((self.k1d.size))
     
@@ -54,6 +56,31 @@ class fourierGrid():
             
         return phr
 
+    def get_ispec_batch(self,field):
+        """ Calculate isotropically averaged spectra for a batch of 2d fields. The input fields
+            must be in Fourier space, with the first dimension being the batch dimension. """
+
+        ## Array to output isotropically averaged wavenumbers
+        phr = np.zeros((len(field),self.k1d.size))
+        ispec=copy.copy(np.array(field))
+
+        ## Account for complex conjugate
+        ispec[:,:,0] /= 2
+        ispec[:,:,-1] /= 2
+
+        ## Loop over wavenumbers. Average all modes within a given |k| range
+        for i in range(self.k1d.size):
+            if i == self.k1d.size-1:
+                fkr = (self.kappa>=self.k1d[i]) & (self.kappa<=self.k1d[i]+self.dkr)
+            else:
+                fkr = (self.kappa>=self.k1d[i]) & (self.kappa<self.k1d[i+1])
+            phr[:,i] = ispec[:,fkr].mean(axis=-1) * (self.k1d[i]+self.dkr/2) * math.pi / (self.dk * self.dl)
+
+            phr[:,i] *= 2 # include full circle
+
+        return phr
+
+        
 def get_ke(omega,fourier_grid):
     """ For a voriticity field and fourier grid, calculate isotropically averaged
         KE spectra.
