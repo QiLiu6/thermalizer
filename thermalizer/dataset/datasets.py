@@ -97,11 +97,14 @@ class KolmogorovDataset(BaseDataset):
         super().__init__(subsample=subsample,seed=seed,train_ratio=train_ratio,valid_ratio=valid_ratio,test_ratio=test_ratio)
         self.file_path=file_path
         if isinstance(self.file_path,str):
-            self.x_data=torch.load(self.file_path)
+            with open(self.file_path, "rb") as input_file:
+                data = pickle.load(input_file)
+                self.x_data=data["data"]
+                self.data_config=data["data_config"]
         else:
             self.x_data=self.file_path
         self.len=len(self.x_data)
-        self.x_std=torch.std(self.x_data)
+        self.x_std=4.8
 
         if self.subsample:
             self._subsample()
@@ -114,3 +117,12 @@ class KolmogorovDataset(BaseDataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         return self.x_data[idx]/self.x_std
+
+    def update_config_dict(self,config):
+        """ Pass a config dict, and add data config elements to it """
+        for key in self.data_config.keys():
+            config[key]=self.data_config[key]
+        config["train_fields"]=len(self.train_idx)
+        config["valid_fields"]=len(self.valid_idx)
+        return config
+        
