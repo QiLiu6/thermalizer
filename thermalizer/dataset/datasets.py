@@ -2,6 +2,7 @@ from torch.utils.data import Dataset
 import numpy as np
 import torch
 import math
+import pickle
 
 
 class BaseDataset(Dataset):
@@ -122,7 +123,7 @@ class KolmogorovDataset(BaseDataset):
         """ Pass a config dict, and add data config elements to it """
         for key in self.data_config.keys():
             config[key]=self.data_config[key]
+        config["field_std"]=self.x_std
         config["train_fields"]=len(self.train_idx)
         config["valid_fields"]=len(self.valid_idx)
         return config
-        
