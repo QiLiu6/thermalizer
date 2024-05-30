@@ -22,22 +22,22 @@ class EmulatorRollout():
 
         ## Set up field tensors
         self.emu=torch.zeros(self.test_suite.shape,dtype=torch.float32)
+        ## Set t=0 to be the same
+        self.emu[:,0,:,:]=self.test_suite[:,0,:,:]
 
         ## Ensure models are in eval
         self.model_emu.eval()
         
         if torch.cuda.is_available():
-            self.device=torch.device('cuda')
+            #self.device=torch.device('cuda')
+            self.device="cuda"
             ## Put models on GPU
-            self.model_emu=self.model_emu.to(self.device)
+            self.model_emu.to(self.device)
             ## Put tensors on GPU
             #self.test_suite=self.test_suite.to(self.device)
             #self.emu=self.emu.to(self.device)
         else:
             self.device="cpu"
-
-        ## Set t=0 to be the same
-        self.emu[:,0,:,:]=self.test_suite[:,0,:,:]
 
         self._init_metrics()
 
