@@ -21,7 +21,7 @@ class EmulatorRollout():
         self.model_emu=model_emu
 
         ## Set up field tensors
-        self.emu=torch.zeros(self.test_suite.shape)
+        self.emu=torch.zeros(self.test_suite.shape,dtype=torch.float32)
 
         ## Ensure models are in eval
         self.model_emu.eval()
@@ -31,8 +31,10 @@ class EmulatorRollout():
             ## Put models on GPU
             self.model_emu=self.model_emu.to(self.device)
             ## Put tensors on GPU
-            self.test_suite=self.test_suite.to(self.device)
-            self.emu=self.emu.to(self.device)
+            #self.test_suite=self.test_suite.to(self.device)
+            #self.emu=self.emu.to(self.device)
+        else:
+            self.device="cpu"
 
         ## Set t=0 to be the same
         self.emu[:,0,:,:]=self.test_suite[:,0,:,:]
@@ -58,10 +60,10 @@ class EmulatorRollout():
     def _evolve(self):
         for aa in tqdm(range(1,len(self.test_suite[1]))):
             ## Step fields forward
-            emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1)
+            emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1).to(self.device)
             preds=self.model_emu(emu_unsq)
             means=torch.mean(preds,axis=(-1,-2))
-            self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze()
+            self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze().cpu()
 
             ## MSE metrics
             loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
