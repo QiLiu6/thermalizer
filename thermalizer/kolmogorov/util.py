@@ -1,5 +1,3 @@
-import jax
-import jax.numpy as jnp
 import numpy as np
 import jax_cfd.base.grids as grids
 from jax_cfd.spectral import utils as spectral_utils
@@ -17,20 +15,20 @@ class fourierGrid():
 
         self.nk = int(self.nx/2 + 1)
         
-        self.ll = self.dl*jnp.concatenate((jnp.arange(0.,nx/2),
-                    jnp.arange(-self.nx/2,0.)))
-        self.kk = self.dk*jnp.arange(0.,self.nk)
+        self.ll = self.dl*np.concatenate((np.arange(0.,nx/2),
+                    np.arange(-self.nx/2,0.)))
+        self.kk = self.dk*np.arange(0.,self.nk)
         
         ## Get k1d
-        self.kmax = jnp.minimum(jnp.max(abs(self.ll)), jnp.max(abs(self.kk)))
-        self.dkr = jnp.sqrt(self.dk**2 + self.dl**2)
-        self.k1d=jnp.arange(0, self.kmax, self.dkr)
+        self.kmax = np.minimum(np.max(abs(self.ll)), np.max(abs(self.kk)))
+        self.dkr = np.sqrt(self.dk**2 + self.dl**2)
+        self.k1d=np.arange(0, self.kmax, self.dkr)
         self.k1d_plot=self.k1d+self.dkr/2
         
         ## Get kappas
-        self.k, self.l = jnp.meshgrid(self.kk, self.ll)
+        self.k, self.l = np.meshgrid(self.kk, self.ll)
         self.kappa2=(self.l**2+self.k**2)
-        self.kappa=jnp.sqrt(self.kappa2)
+        self.kappa=np.sqrt(self.kappa2)
 
     def get_ispec(self,field):
         """ Calculate isotropically averaged spectra for a given input 2d field. The input field
@@ -91,7 +89,7 @@ def get_ke(omega,fourier_grid):
         kespec:   KE spectrum in each wavenumber bin
     """
     omegah=np.fft.rfftn(omega)
-    grid = grids.Grid((omega.shape[0], omega.shape[1]), domain=((0, 2 * jnp.pi), (0, 2 * jnp.pi)))
+    grid = grids.Grid((omega.shape[0], omega.shape[1]), domain=((0, 2 * np.pi), (0, 2 * np.pi)))
     velocity_solve = spectral_utils.vorticity_to_velocity(grid)
     vxhat, vyhat = velocity_solve(omegah)
     KEh=abs(vxhat**2)+abs(vyhat**2)
