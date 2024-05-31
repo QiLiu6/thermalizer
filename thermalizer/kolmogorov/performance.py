@@ -17,7 +17,8 @@ class EmulatorRollout():
                         snapshots are taken 10 numerical timesteps apart
             model_emu:  a trained pytorch CNN emulator of the residuals, over 10 numerical timesteps apart
         """
-        self.test_suite=test_suite/model_emu.config["field_std"]
+        self.test_suite=test_suite
+        self.test_suite/=model_emu.config["field_std"]
         self.model_emu=model_emu
 
         ## Set up field tensors
