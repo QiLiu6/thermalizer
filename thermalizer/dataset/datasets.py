@@ -15,6 +15,8 @@ def parse_data_file(config):
     if "subsample" in config.keys():
         if config["subsample"] is not None:
             data=data["data"][:config["subsample"]]
+        else:
+            data=data["data"]
 
     ## Set seed for train/valid splits
     if "seed" in config.keys():
