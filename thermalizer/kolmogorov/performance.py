@@ -296,9 +296,9 @@ class KolmogorovAnimation():
             Animate the evolution of the simulated
             vs emulated vorticity fields. Have an option to cache the residuals, such that we can estimate the
             covariance of the noise in fields 
-            ds contains the true simulation data. Assume that it is an unnormalised torch tensor.
+            ds contains the true simulation data. Assume that it is a NORMALISED torch tensor.
             """
-        self.ds=ds/model.config["field_std"]
+        self.ds=ds
         self.model=model
         self.fps=fps
         self.nSteps=nSteps
