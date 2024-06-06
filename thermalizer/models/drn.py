@@ -200,9 +200,6 @@ class ResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def __repr__(self):
-        return "ResNet"
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         orig_shape = x.shape
         #x = x.reshape(x.size(0), -1, *x.shape[3:])  # collapse T,C
