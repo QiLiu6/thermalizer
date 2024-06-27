@@ -38,6 +38,40 @@ def parse_data_file(config):
     
     return train_dataset, valid_dataset, config
 
+def parse_data_file_qg(config):
+    ## Use fixed normalisation for all QG fields, for eddy
+    ## at least we don't expect this to vary
+    upper_std=8.6294e-06 
+    lower_std=1.1706e-06
+    with open(config["file_path"], "rb") as input_file:
+        data = torch.load(input_file)
+
+    data[:,:,0,:,:]/=upper_std
+    data[:,:,1,:,:]/=lower_std
+
+    ## Subsample data if requested
+    if "subsample" in config.keys():
+        if config["subsample"] is not None:
+            data=data[:config["subsample"]]
+
+    ## Set seed for train/valid splits
+    if "seed" in config.keys():
+        seed=config["seed"]
+    else:
+        seed=42
+        
+    ## Get train/valid splits & cut data
+    train_idx,valid_idx=get_split_indices(len(data))
+    train_dataset=data[train_idx]
+    valid_dataset=data[valid_idx]
+
+    config["upper_std"]=upper_std
+    config["lower_std"]=lower_std
+    config["train_fields"]=len(train_dataset)
+    config["valid_fields"]=len(valid_dataset)
+    
+    return train_dataset, valid_dataset, config
+
 def get_split_indices(set_size,seed=42,train_ratio=0.75,valid_ratio=0.25):
     """ Get indices for train, valid and test splits """
     
@@ -138,18 +172,17 @@ class KSDataset(BaseDataset):
         return self.x_data[idx]
 
 
-class KolmogorovDataset(Dataset):
+class FluidDataset(Dataset):
     """
-    Dataset for Kolmogorov flow trajectories
+    Dataset for fluid flow trajectories
+    Can work with either QG or Kolmogorov - it is
+    agnostic to the number of input channels and input
+    normalisations etc. All this processing is done in 
+    the parse_data_file functions.
     """
     def __init__(self,data_tensor):
         """
-        file_path:     path to data
-        seed:          random seed used to create train/valid/test splits
-        subsample:     None or int: if int, subsample the dataset to a total of N=subsample maps
-        train_ratio:
-        valid_ratio:
-        test_ratio:
+        tensor containing data - assume that this is already normalised
         """
         
         super().__init__()
@@ -160,9 +193,7 @@ class KolmogorovDataset(Dataset):
         return self.len
             
     def __getitem__(self, idx):
-        """ Return elements at each index specified by idx. Will rescale to unit
-            variance using the std of the full dataset. NB that we are not rescaling
-            the mean, as we are assuming these fields are already 0 mean """
+        """ Return elements at each index specified by idx."""
         if torch.is_tensor(idx):
             idx = idx.tolist()
         return self.x_data[idx]
