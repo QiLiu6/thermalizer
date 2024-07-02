@@ -39,10 +39,16 @@ def parse_data_file(config):
     return train_dataset, valid_dataset, config
 
 def parse_data_file_qg(config):
-    ## Use fixed normalisation for all QG fields, for eddy
-    ## at least we don't expect this to vary
-    upper_std=8.6294e-06 
-    lower_std=1.1706e-06
+    """ From a config file, load the corresponding torch tensor. Split into
+    train and validation datasets, and update config dict with metadata """
+
+    ## Use fixed normalisation for QG eddy and jet configs
+    if config["qg"]="eddy":
+        upper_std=8.6294e-06 
+        lower_std=1.1706e-06
+    elif config["qg"]="jet":
+        upper_std=7.6382e-06
+        lower_std=3.0120e-07
     with open(config["file_path"], "rb") as input_file:
         data = torch.load(input_file)
 
