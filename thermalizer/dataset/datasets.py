@@ -42,11 +42,21 @@ def parse_data_file_qg(config):
     """ From a config file, load the corresponding torch tensor. Split into
     train and validation datasets, and update config dict with metadata """
 
+    ## If eddy vs jet config isn't in the dict, identify from the file path
+    ## and update dict
+    if "qg" in config.keys() == False:
+        if "eddy" in config["file_path"]:
+            config["qg"]="eddy"
+        elif "jet" in config["file_path"]:
+            config["qg"]="jet"
+        else:
+            print("Neither jet nor eddy identified")
+
     ## Use fixed normalisation for QG eddy and jet configs
-    if config["qg"]="eddy":
+    if config["qg"]=="eddy":
         upper_std=8.6294e-06 
         lower_std=1.1706e-06
-    elif config["qg"]="jet":
+    elif config["qg"]=="jet":
         upper_std=7.6382e-06
         lower_std=3.0120e-07
     with open(config["file_path"], "rb") as input_file:
