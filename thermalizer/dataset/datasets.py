@@ -44,7 +44,7 @@ def parse_data_file_qg(config):
 
     ## If eddy vs jet config isn't in the dict, identify from the file path
     ## and update dict
-    if "qg" in config.keys() == False:
+    if ("qg" in config.keys()) == False:
         if "eddy" in config["file_path"]:
             config["qg"]="eddy"
         elif "jet" in config["file_path"]:
