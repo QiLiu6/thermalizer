@@ -26,21 +26,21 @@ def parse_data_file(config):
         
     ## Get train/valid splits & cut data
     train_idx,valid_idx=get_split_indices(len(data))
-    train_dataset=data[train_idx]/field_std
-    valid_dataset=data[valid_idx]/field_std
+    train_data=data[train_idx]/field_std
+    valid_data=data[valid_idx]/field_std
 
     ## Update config dict with data config
     for key in data_config.keys():
         config[key]=data_config[key]
     config["field_std"]=field_std
-    config["train_fields"]=len(train_dataset)
-    config["valid_fields"]=len(valid_dataset)
+    config["train_fields"]=len(train_data)
+    config["valid_fields"]=len(valid_data)
     
-    return train_dataset, valid_dataset, config
+    return train_data, valid_data, config
 
 def parse_data_file_qg(config):
     """ From a config file, load the corresponding torch tensor. Split into
-    train and validation datasets, and update config dict with metadata """
+    train and validation tensors, and update config dict with metadata """
 
     ## If eddy vs jet config isn't in the dict, identify from the file path
     ## and update dict
@@ -78,15 +78,15 @@ def parse_data_file_qg(config):
         
     ## Get train/valid splits & cut data
     train_idx,valid_idx=get_split_indices(len(data))
-    train_dataset=data[train_idx]
-    valid_dataset=data[valid_idx]
+    train_data=data[train_idx]
+    valid_data=data[valid_idx]
 
     config["upper_std"]=upper_std
     config["lower_std"]=lower_std
-    config["train_fields"]=len(train_dataset)
-    config["valid_fields"]=len(valid_dataset)
+    config["train_fields"]=len(train_data)
+    config["valid_fields"]=len(valid_data)
     
-    return train_dataset, valid_dataset, config
+    return train_data, valid_data, config
 
 def get_split_indices(set_size,seed=42,train_ratio=0.75,valid_ratio=0.25):
     """ Get indices for train, valid and test splits """
