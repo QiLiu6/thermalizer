@@ -3,6 +3,7 @@ import torch_qg.parameterizations as torch_param
 from tqdm import tqdm
 import json
 import xarray as xr
+import torch
 
 def run_test_sim(steps,hr_model=None,lr_model=None,sampling_freq=10,jet=False):
     """ Run a qg simulation trajectory. We simulate in high res, and downsample to low res. We return
@@ -27,14 +28,12 @@ def run_test_sim(steps,hr_model=None,lr_model=None,sampling_freq=10,jet=False):
     for aa in range(55990):
         hr_model._step_ab3()
 
-    ## Run physical trajectory and save snapshots at whatever selected frequency
+    ## Run physical trajectory and save snapshots at whatever selected frequency    
     for aa in tqdm(range(steps)):
         hr_model._step_ab3()
         if (aa % sampling_freq == 0):
             ds.append(hr_model.forcing_dataset(lr_model))
-
+            
     ds=xr.concat(ds,dim="time")
-    params={}
-    params["sampling_freq"]=sampling_freq
-    return ds.assign_attrs(rollout_config=json.dumps(params))
+    return torch.tensor(ds.q.values,dtype=torch.float32)
 
