@@ -32,6 +32,8 @@ def parse_data_file(config):
     ## Update config dict with data config
     for key in data_config.keys():
         config[key]=data_config[key]
+
+    config["rollout"]=data.shape[1]
     config["field_std"]=field_std
     config["train_fields"]=len(train_data)
     config["valid_fields"]=len(valid_data)
@@ -81,6 +83,7 @@ def parse_data_file_qg(config):
     train_data=data[train_idx]
     valid_data=data[valid_idx]
 
+    config["rollout"]=data.shape[1]
     config["upper_std"]=upper_std
     config["lower_std"]=lower_std
     config["train_fields"]=len(train_data)
