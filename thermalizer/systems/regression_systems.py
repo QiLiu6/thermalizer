@@ -67,6 +67,12 @@ class RolloutResidualSystem(BaseRegSytem):
         else:
             self.add_noise=None
 
+        ## Set num passes to be full trajectory
+        self.num_passes=self.config["rollout"]-1
+        ## Unless we have opted for a shorter rollout
+        if "short_rollout" in self.config:
+            self.num_passes=self.config["short_rollout"]
+
     def step_multi_channel(self,batch,kind):
         """ For multiple channel data, no need to unsqueeze the data tensors """
         x_data=batch
@@ -74,7 +80,7 @@ class RolloutResidualSystem(BaseRegSytem):
             noise=torch.randn_like(x_data)*self.add_noise
             x_data=x_data+noise
         loss=0
-        for aa in range(0,x_data.shape[1]-1):
+        for aa in range(0,self.num_passes):
             if aa==0:
                 x_t=x_data[:,0]
             else:
@@ -91,7 +97,7 @@ class RolloutResidualSystem(BaseRegSytem):
         """ For single channel data, we need to unsqueeze inputs to conv net """
         x_data=batch
         loss=0
-        for aa in range(0,x_data.shape[1]-1):
+        for aa in range(0,self.num_passes):
             if aa==0:
                 ## Make sure to unsqueeze - conv1d takes [N_batch, n_channels, seq_length]
                 ## And for KS we have just 1 feature :))
