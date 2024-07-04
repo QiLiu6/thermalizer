@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 class QGAnimation():
     def __init__(self,ds,emu,fps=10,nSteps=1000,skip=1,savestring=None):
-        """ Animate a simulated and emulated trajectory
+        """ Animate a simulated and emulated trajectory side by side
             """
         self.ds=ds.numpy()
         self.emu=emu.numpy()
@@ -23,7 +23,8 @@ class QGAnimation():
         self.savestring=savestring
         
     def _push_forward(self):
-        """ Update predicted q by one emulator pass """
+        """ Here we just update the step counter - we are not pushing the emulator forward
+            unlike in original iterations. Also we have no spectral stuff yet """
 
         #_,self.kesim=util.get_ke(self.ds[self.step_counter],self.grid)
         #_,self.kepred=util.get_ke(self.emu[self.step_counter],self.grid)
