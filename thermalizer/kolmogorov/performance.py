@@ -525,6 +525,40 @@ class ScoreAnimation():
         self.ax2.set_clim(-lim,lim)
         return 
 
+def long_run_figures(model,emu_run,steps=int(1e4)):
+    """ For a given emulator model and set of test ICs, run for `steps` iterations
+        We will plot enstrophy over time, and plot the fields at the end of the rollout
+        Here we are testing long term stability - on timescales longer than we can store
+        test data for.
+        
+        Test set will be just the initial states, i.e. [batch size, nx, ny]
+        Also assuming model is already on GPU"""
+
+    assert 0.9<emu_run.std().item()<1.1, "Fields are not normalised"
+    
+    enstrophies=torch.zeros((len(emu_run),steps))
+    with torch.no_grad():
+        for aa in tqdm(range(steps)):
+            emu_run=model_cnn(emu_run.unsqueeze(1)).squeeze()+emu_run
+            enstrophies[:,aa]=abs(emu_run**2).sum(axis=(1,2))
+
+    enstrophy_figure=plt.figure()
+    plt.title("Enstrophy from long emulator rollout")
+    for aa in range(len(enstrophies)):
+        plt.plot(enstrophies[aa],color="gray",alpha=0.4)
+    plt.ylim(1000,10000)
+    plt.xlabel("Emulator timestep")
+    plt.ylabel("Enstrophy")
+   
+    field_figure=plt.figure(figsize=(14,6))
+    plt.suptitle("Model predictions after %d emulator steps" % steps)
+    for aa in range(1,9):
+        plt.subplot(2,4,aa)
+        plt.imshow(emu_run[aa].cpu().squeeze(),cmap=sns.cm.icefire)
+        plt.colorbar()
+    return enstrophy_figure, field_figure
+
+
 def plot_thermalizer_norms(test_snap,thermalizer,num_trials=50,noise_steps=200,noise_coeff=1):
     """ For a given test image, add incremental amounts of noise to it. Pass this image
         to the thermalizer, and then plot the L2 norm of the score field that the thermalizer
