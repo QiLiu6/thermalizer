@@ -71,6 +71,7 @@ class RolloutResidualSystem(BaseRegSytem):
         self.num_passes=self.config["rollout"]-1
         ## Unless we have opted for a shorter rollout
         if "short_rollout" in self.config:
+            assert self.config["short_rollout"]<=self.config["rollout"], "Short rollout is too long!"
             self.num_passes=self.config["short_rollout"]
 
     def step_multi_channel(self,batch,kind):
