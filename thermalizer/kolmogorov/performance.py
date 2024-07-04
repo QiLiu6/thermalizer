@@ -525,7 +525,7 @@ class ScoreAnimation():
         self.ax2.set_clim(-lim,lim)
         return 
 
-def long_run_figures(model,emu_run,steps=int(1e4)):
+def long_run_figures(model,emu_run,steps=int(1e6)):
     """ For a given emulator model and set of test ICs, run for `steps` iterations
         We will plot enstrophy over time, and plot the fields at the end of the rollout
         Here we are testing long term stability - on timescales longer than we can store
@@ -535,11 +535,16 @@ def long_run_figures(model,emu_run,steps=int(1e4)):
         Also assuming model is already on GPU"""
 
     assert 0.9<emu_run.std().item()<1.1, "Fields are not normalised"
+
+    ## Just going to assume we have a GPU available, as we are not doing long
+    ## rollouts on CPU
+    emu_run=emu_run.to("cuda")
+    model=model.to("cuda")
     
     enstrophies=torch.zeros((len(emu_run),steps))
     with torch.no_grad():
-        for aa in tqdm(range(steps)):
-            emu_run=model_cnn(emu_run.unsqueeze(1)).squeeze()+emu_run
+        for aa in range(steps):
+            emu_run=model(emu_run.unsqueeze(1)).squeeze()+emu_run
             enstrophies[:,aa]=abs(emu_run**2).sum(axis=(1,2))
 
     enstrophy_figure=plt.figure()
