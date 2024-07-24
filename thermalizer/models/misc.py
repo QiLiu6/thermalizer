@@ -1,16 +1,18 @@
 import numpy as np
 import io
+import pickle
+import tqdm
+import xarray as xr
+import math
 import torch
 from torch import nn
-import pickle
+
 import thermalizer.models.diffusion as diffusion
 import thermalizer.models.cnn as cnn
 import thermalizer.models.unet as unet
 import thermalizer.models.unet_modern as munet
 import thermalizer.models.drn as drn
 
-import xarray as xr
-import math
 
 """ Store some miscellaneous helper methods that are frequently used """
 
@@ -97,7 +99,7 @@ def estimate_covmat(field_tensor,nsamp=None):
         cov+=torch.outer(test_suite[aa][0].flatten(),test_suite[aa][0].flatten())
     cov/=(nsamp-1)
     return cov
-    
+
 
 class FieldNoiser():
     """ Forward diffusion module for various different noise schedulers """
