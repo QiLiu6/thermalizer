@@ -4,6 +4,8 @@ import torch
 import math
 import pickle
 
+## Just hardcode this for Kolmogorov fields
+field_std=4.44
 
 def parse_data_file(config):
     field_std=4.8 ## We are just using this for all Kolmogorov flows..
