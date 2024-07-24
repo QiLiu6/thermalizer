@@ -77,6 +77,28 @@ def load_diffusion_model(file_string):
     return diffusion_model
 
 
+def estimate_covmat(field_tensor,nsamp=None):
+    """ Estimate covariance matrix from some tensor of fields. Can either be
+        flattened to batched 1D tensors, or batched 2D fields 
+        use nsamp to estimate covmat from a subsample of the data """
+
+    ## If nsamp is not provided, use every sample in field_tensor
+    if nsamp==None:
+        nsamp=len(field_tensor)
+
+    ## If the field tensor isn't flattened, flatten
+    if len(field_tensor.shape)>2:
+        field_tensor=field_tensor.reshape((len(field_tensor),64*64))
+
+    ## Initialise covariance matrix
+    cov=torch.zeros((64**2,64**2))
+
+    for aa in tqdm(range(nsamp)):
+        cov+=torch.outer(test_suite[aa][0].flatten(),test_suite[aa][0].flatten())
+    cov/=(nsamp-1)
+    return cov
+    
+
 class FieldNoiser():
     """ Forward diffusion module for various different noise schedulers """
     def __init__(self,timesteps,scheduler):
