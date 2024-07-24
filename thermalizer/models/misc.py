@@ -1,11 +1,11 @@
 import numpy as np
 import io
 import pickle
-import tqdm
 import xarray as xr
 import math
 import torch
 from torch import nn
+from tqdm import tqdm
 
 import thermalizer.models.diffusion as diffusion
 import thermalizer.models.cnn as cnn
@@ -96,10 +96,33 @@ def estimate_covmat(field_tensor,nsamp=None):
     cov=torch.zeros((64**2,64**2))
 
     for aa in tqdm(range(nsamp)):
-        cov+=torch.outer(test_suite[aa][0].flatten(),test_suite[aa][0].flatten())
+        cov+=torch.outer(field_tensor[aa],field_tensor[aa])
     cov/=(nsamp-1)
     return cov
 
+
+def get_whitening_from_cov(cov):
+    """ Get whitening matrix from covariance matrix
+        We are using the fact that we can diagonalise
+        covariance matrix K=ULU^T
+
+        Which allows us to obtain:
+        W=K^{-1/2}=UL^{-1/2}U^T
+
+        and produce a whitened random vector z=Wx with
+        identity covariance
+    """
+    
+    ## Get eigenvalue decomposition of covariance matrix
+    lamb,u=torch.linalg.eig(cov)
+    ## Find L^{-1/2}
+    lambinv=torch.eye(len(lamb))*(1/torch.sqrt(lamb))
+
+    ## W=K^{-1/2}=UL^{-1/2}U^T
+    whitener=torch.matmul(torch.matmul(u,lambinv),u.T)
+
+    return whitener
+    
 
 class FieldNoiser():
     """ Forward diffusion module for various different noise schedulers """
