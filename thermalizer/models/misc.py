@@ -110,18 +110,22 @@ def get_whitening_from_cov(cov):
         W=K^{-1/2}=UL^{-1/2}U^T
 
         and produce a whitened random vector z=Wx with
-        identity covariance
+        identity covariance.
+
+        Return both the whitening and dewhitening matrices
     """
     
     ## Get eigenvalue decomposition of covariance matrix
     lamb,u=torch.linalg.eig(cov)
     ## Find L^{-1/2}
     lambinv=torch.eye(len(lamb))*(1/torch.sqrt(lamb))
+    lambroot=torch.eye(len(lamb))*(torch.sqrt(lamb))
 
     ## W=K^{-1/2}=UL^{-1/2}U^T
     whitener=torch.matmul(torch.matmul(u,lambinv),u.T)
+    dewhitener=torch.matmul(torch.matmul(u,lambroot),u.T)
 
-    return whitener
+    return whitener, dewhitener
     
 
 class FieldNoiser():
