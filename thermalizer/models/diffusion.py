@@ -21,6 +21,16 @@ class Diffusion(nn.Module):
             self.noise_sampling_coeff=config["noise_sampling_coeff"]
         else:
             self.noise_sampling_coeff=None
+
+        if "whitening" in self.config:
+            if self.config["whitening"]:
+                whitening_transform=torch.load(self.config["whitening"])
+                self.register_buffer("whitening_transform",whitening_transform)
+            else:
+                self.whitening_transform=None
+        else:
+            self.whitening_transform=None
+            
         self.silence=silence
         self.sampled_times=[]
         
@@ -35,7 +45,7 @@ class Diffusion(nn.Module):
         self.register_buffer("alphas_cumprod",alphas_cumprod)
         self.register_buffer("sqrt_alphas_cumprod",torch.sqrt(alphas_cumprod))
         self.register_buffer("sqrt_one_minus_alphas_cumprod",torch.sqrt(1.-alphas_cumprod))
-
+        
         self.model=model
 
     def forward(self,x,noise):
@@ -52,10 +62,36 @@ class Diffusion(nn.Module):
         else:
             t=torch.randint(0,self.timesteps,(x.shape[0],)).to(x.device)
         self.sampled_times.append(t)
+
+        ## Whiten the input data if we are whitening
+        if self.whitening_transform is not None:
+            x=self.whiten_batch(x)
         x_t=self._forward_diffusion(x,t,noise)
         pred_noise=self.model(x_t,t)
 
         return pred_noise,x_t,t
+
+    def whiten_batch(self,batch):
+        """ For a given batch of fields, whiten using the whitening transformation """
+
+        ## First vectorise batch
+        batch=batch.reshape((batch.shape[0],batch.shape[1],self.config["image_size"]**2))
+        ## Whiten
+        batch=torch.matmul(batch,self.whitening_transform[0].real)
+        ## Reshape back to image dimensions
+        batch=batch.reshape((batch.shape[0],batch.shape[1],self.config["image_size"],self.config["image_size"]))
+        return batch
+
+    def dewhiten_batch(self,batch):
+        """ For a given batch of fields, dewhiten using the whitening transformation """
+
+        ## First vectorise batch
+        batch=batch.reshape((batch.shape[0],batch.shape[1],self.config["image_size"]**2))
+        ## Dewhiten using inverse transform, K^{1/2}
+        batch=torch.matmul(batch,self.whitening_transform[1].real)
+        ## Reshape back to image dimensions
+        batch=batch.reshape((batch.shape[0],batch.shape[1],self.config["image_size"],self.config["image_size"]))
+        return batch
 
     @torch.no_grad()
     def sampling(self,n_samples,clipped_reverse_diffusion=None,device="cuda"):
@@ -72,15 +108,34 @@ class Diffusion(nn.Module):
         return x_t
 
     @torch.no_grad()
-    def denoising(self,noised_samples,denoising_timestep,device="cuda"):
-        """ Pass validation samples, noised to time `denoising timstep`. Denoise these samples and return """
-        x_t=noised_samples.to(device)
+    def denoising(self,x,denoising_timestep,device="cuda"):
+        """ Pass validation samples, x, and some denoising timestep.
+            Add noise using forward diffusion, denoise these samples and return
+            both the forward diffused and denoised images, after dewhitening if
+            we are doing whitening """
+
+        if self.whitening_transform is not None:
+            x=self.whiten_batch(x)
+
+        ## Noise timestep
+        t=(torch.ones(len(x),dtype=torch.int64)*denoising_timestep).to(device)
+        noise=torch.randn_like(x).to(device)
+        noised=self._forward_diffusion(x,t,noise)
+        
+        x_t=noised.to(device)
         for i in tqdm(range(denoising_timestep-1,-1,-1),desc="Denoising",disable=self.silence):
             noise=torch.randn_like(x_t).to(device)
-            t=torch.tensor([i for _ in range(len(noised_samples))]).to(device)
+            t=torch.tensor([i for _ in range(len(x))]).to(device)
             x_t=self._reverse_diffusion(x_t,t,noise)
 
-        return x_t
+        ## Dewhiten if we are whitening
+        if self.whitening_transform is not None:
+            ## The "denoised" fields
+            x_t=self.dewhiten_batch(x_t)
+            ## And the forward-diffused fields
+            noised=self.dewhiten_batch(noised)
+            
+        return x_t, noised
     
     def _cosine_variance_schedule(self,timesteps,epsilon= 0.008):
         steps=torch.linspace(0,timesteps,steps=timesteps+1,dtype=torch.float32)
@@ -144,4 +199,3 @@ class Diffusion(nn.Module):
             std=0.0
 
         return mean+std*noise 
-
