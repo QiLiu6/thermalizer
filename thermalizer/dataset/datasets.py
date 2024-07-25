@@ -8,7 +8,14 @@ import pickle
 field_std=4.44
 
 def parse_data_file(config):
-    field_std=4.8 ## We are just using this for all Kolmogorov flows..
+    """ From a config dict, this function will:
+    1. load and normalise data from the file path
+    2. Split into train and valid splits (can use a fixed seed for this)
+    3.Update config dictionary with metadata
+
+    Returns tuple of train_data, valid_data, config dict
+    where train and valid data are torch tensors
+    """
     with open(config["file_path"], "rb") as input_file:
         data = pickle.load(input_file)
     data_config=data["data_config"]
