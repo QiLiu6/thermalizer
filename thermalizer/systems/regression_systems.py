@@ -74,52 +74,26 @@ class RolloutResidualSystem(BaseRegSytem):
             assert self.config["short_rollout"]<=self.config["rollout"], "Short rollout is too long!"
             self.num_passes=self.config["short_rollout"]
 
-    def step_multi_channel(self,batch,kind):
-        """ For multiple channel data, no need to unsqueeze the data tensors """
+    def step(self,batch,kind):
+        """ Evaluate loss function: residual field between two timesteps """
         x_data=batch
         if self.add_noise:
             noise=torch.randn_like(x_data)*self.add_noise
             x_data=x_data+noise
         loss=0
+        if self.config["input_channels"]==1:
+            x_data=x_data.unsqueeze(2)
         for aa in range(0,self.num_passes):
             if aa==0:
                 x_t=x_data[:,0]
             else:
                 x_t=x_dt+x_t
             x_dt=self(x_t)
-            loss_dt=self.criterion(x_dt,x_data[:,aa+1]-x_data[:,aa])
-            self.log(f"{kind}_loss_%d" % aa, loss_dt, on_step=False, on_epoch=True, sync_dist=True)
-            loss+=loss_dt
-            
-        self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True, sync_dist=True) 
-        return loss
-
-    def step_single_channel(self,batch,kind):
-        """ For single channel data, we need to unsqueeze inputs to conv net """
-        x_data=batch
-        loss=0
-        for aa in range(0,self.num_passes):
-            if aa==0:
-                ## Make sure to unsqueeze - conv1d takes [N_batch, n_channels, seq_length]
-                ## And for KS we have just 1 feature :))
-                x_pred=self(x_data[:,0,:].unsqueeze(1))
-            else:
-                x_pred=self(x_pred)
-            loss_dt=self.criterion(x_pred,x_data[:,aa+1,:].unsqueeze(1))
+            loss_dt=self.criterion(x_dt,x_data[:,aa+1]-x_data[:,aa,:])
             self.log(f"{kind}_loss_%d" % aa, loss_dt, on_step=False, on_epoch=True)
             loss+=loss_dt
             
         self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True)     
-        return loss
-
-    def step(self,batch,kind):
-        """ Evaluate loss function. Create seperate functions for single and multiple
-            channel datasets. Same loss function, we just need to unsqueeze in the case of
-            single channel datasets """
-        if self.config["input_channels"]==1:
-            loss=self.step_single_channel(batch,kind)
-        else:
-            loss=self.step_multi_channel(batch,kind) 
         return loss
 
 
