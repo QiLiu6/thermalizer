@@ -142,7 +142,7 @@ class Unet(nn.Module):
         assert isinstance(self.config["dim_mults"],(list,tuple))
         assert self.config["base_dim"]%2==0
         self.config["model_type"]="Unet"
-        if "time_embedding_dim" in config:
+        if self.config.get("time_embedding_dim"):
             self.time_embedding_dim=self.config["time_embedding_dim"]
             self.timesteps=self.config["timesteps"]
             self.time_embedding=nn.Embedding(self.config["timesteps"],self.config["time_embedding_dim"])
