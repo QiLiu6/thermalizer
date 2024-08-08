@@ -24,12 +24,9 @@ class Diffusion(nn.Module):
             self.noise_sampling_coeff=None
 
         ## Check if we are using whitened fields
-        if "whitening" in self.config:
-            if self.config["whitening"]:
-                whitening_transform=torch.load(self.config["whitening"])
-                self.register_buffer("whitening_transform",whitening_transform)
-            else:
-                self.whitening_transform=None
+        if self.config.get("whitening"):
+            whitening_transform=torch.load(self.config["whitening"])
+            self.register_buffer("whitening_transform",whitening_transform)
         else:
             self.whitening_transform=None
 
@@ -199,7 +196,7 @@ class Diffusion(nn.Module):
             pred=self.model(x_t,t)
         else:
             pred=self.model(x_t)
-            
+
         alpha_t=self.alphas.gather(-1,t).reshape(x_t.shape[0],1,1,1)
         alpha_t_cumprod=self.alphas_cumprod.gather(-1,t).reshape(x_t.shape[0],1,1,1)
         beta_t=self.betas.gather(-1,t).reshape(x_t.shape[0],1,1,1)
