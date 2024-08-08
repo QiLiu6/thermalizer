@@ -180,6 +180,42 @@ class Downsample(nn.Module):
         return self.conv(x)
 
 
+class RegressorBlock(nn.Module):
+    def __init__(self, mid_channels: int, mid_size: int, mlp_dim: int=256, activation: str = "gelu", norm: bool = False):
+        """ Block to take the encoded middle layer, run through a 1x1 conv,
+            then vectorise to an MLP to produce a scalar output. We will use this
+            to try and predict the noise level in the fields.
+            
+            mid_channels: number of channels in the middle layer - used to define 1x1 conv
+            mid_size: image size in the middle layer - used to define MLP layer size """
+        
+        super().__init__()
+        self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(activation, None)
+        self.conv1=nn.Conv2d(mid_channels, mid_channels, kernel_size=(3, 3), padding=(1, 1))
+        self.conv2=nn.Conv2d(mid_channels, 1, kernel_size=(1, 1))
+        self.linear1=nn.Linear(mid_size**2, mlp_dim)
+        self.linear2=nn.Linear(mlp_dim, mlp_dim)
+        self.linear3=nn.Linear(mlp_dim, 1)
+
+        if norm:
+            self.norm1 = nn.GroupNorm(n_groups, in_channels)
+            self.norm2 = nn.GroupNorm(n_groups, out_channels)
+        else:
+            self.norm1 = nn.Identity()
+            self.norm2 = nn.Identity()
+
+    def forward(self,x):
+        """ Forward pass - run some convolutions, then vectorise to MLP and
+            produce scalar output """
+        x = self.conv1(self.activation(self.norm1(x)))
+        x = self.conv2(self.activation(self.norm2(x)))
+        x = x.reshape(x.shape[0],x.shape[2]*x.shape[3])
+        x = self.activation(self.linear1(x))
+        x = self.activation(self.linear2(x))
+        x = self.linear3(x)
+        return x
+
+
 class ModernUnet(nn.Module):
     """Modern U-Net architecture
 
@@ -331,3 +367,44 @@ class ModernUnet(nn.Module):
             pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
         print("Model saved as %s" % save_string)
         return
+
+
+class ModernUnetRegressor(ModernUnet):
+    """ Inherit the Modern Unet, but add a scalar output
+        to perform regression, by overriding forward method """
+    def __init__(self,config):
+        super().__init__(config)
+        self.config["model_type"]="ModernUnetRegressor"
+        self.mid_dim=int(self.config["image_size"]/(2*(len(self.config["dim_mults"])-1)))
+        self.regressor_block=RegressorBlock(2*self.config["hidden_channels"]*self.config["dim_mults"][-1],self.mid_dim)
+
+    def forward(self, x: torch.Tensor):
+        ## Override forward method from original network
+        #assert x.dim() == 5
+        #orig_shape = x.shape
+        #x = x.reshape(x.size(0), -1, *x.shape[3:])  # collapse T,C
+        x = self.image_proj(x)
+
+        h = [x]
+        for m in self.down:
+            x = m(x)
+            h.append(x)
+
+        x = self.middle(x)
+        y = self.regressor_block(x)
+
+        for m in self.up:
+            if isinstance(m, Upsample):
+                x = m(x)
+            else:
+                # Get the skip connection from first half of U-Net and concatenate
+                s = h.pop()
+                x = torch.cat((x, s), dim=1)
+                #
+                x = m(x)
+
+        x = self.final(self.activation(self.norm(x)))
+        #x = x.reshape(
+        #    orig_shape[0], -1, (self.n_output_scalar_components + self.n_output_vector_components * 2), *orig_shape[3:]
+        #)
+        return x, y
