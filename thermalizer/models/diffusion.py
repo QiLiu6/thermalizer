@@ -169,7 +169,10 @@ class Diffusion(nn.Module):
 
         pred_noise-> pred_mean and pred_std
         '''
-        pred=self.model(x_t,t)
+        if self.time_embedding_dim:
+            pred=self.model(x_t,t)
+        else:
+            pred=self.model(x_t)
 
         alpha_t=self.alphas.gather(-1,t).reshape(x_t.shape[0],1,1,1)
         alpha_t_cumprod=self.alphas_cumprod.gather(-1,t).reshape(x_t.shape[0],1,1,1)
@@ -192,7 +195,11 @@ class Diffusion(nn.Module):
 
         pred_noise -> pred_x_0 (clip to [-1.0,1.0]) -> pred_mean and pred_std
         '''
-        pred=self.model(x_t,t)
+        if self.time_embedding_dim:
+            pred=self.model(x_t,t)
+        else:
+            pred=self.model(x_t)
+            
         alpha_t=self.alphas.gather(-1,t).reshape(x_t.shape[0],1,1,1)
         alpha_t_cumprod=self.alphas_cumprod.gather(-1,t).reshape(x_t.shape[0],1,1,1)
         beta_t=self.betas.gather(-1,t).reshape(x_t.shape[0],1,1,1)
