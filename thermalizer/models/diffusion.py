@@ -13,6 +13,7 @@ class Diffusion(nn.Module):
         
         super().__init__()
         self.config=config
+        ## Store number of timesteps
         if "timesteps" in self.config:
             self.timesteps=self.config["timesteps"]
         self.in_channels=self.config["input_channels"]
@@ -22,6 +23,7 @@ class Diffusion(nn.Module):
         else:
             self.noise_sampling_coeff=None
 
+        ## Check if we are using whitened fields
         if "whitening" in self.config:
             if self.config["whitening"]:
                 whitening_transform=torch.load(self.config["whitening"])
@@ -30,6 +32,12 @@ class Diffusion(nn.Module):
                 self.whitening_transform=None
         else:
             self.whitening_transform=None
+
+        ## Check if we want to include timestep information
+        if "time_embedding_dim" in self.config:
+            self.time_embedding_dim=self.config["time_embedding_dim"]
+        else:
+            self.time_embedding_dim=None
             
         self.silence=silence
         self.sampled_times=[]
@@ -67,7 +75,11 @@ class Diffusion(nn.Module):
         if self.whitening_transform is not None:
             x=self.whiten_batch(x)
         x_t=self._forward_diffusion(x,t,noise)
-        pred_noise=self.model(x_t,t)
+
+        if self.time_embedding_dim:
+            pred_noise=self.model(x_t,t)
+        else:
+            pred_noise=self.model(x_t)
 
         return pred_noise,x_t,t
 
