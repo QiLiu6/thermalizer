@@ -378,11 +378,9 @@ class ModernUnetRegressor(ModernUnet):
         self.mid_dim=int(self.config["image_size"]/(2*(len(self.config["dim_mults"])-1)))
         self.regressor_block=RegressorBlock(2*self.config["hidden_channels"]*self.config["dim_mults"][-1],self.mid_dim)
 
-    def forward(self, x: torch.Tensor):
-        ## Override forward method from original network
-        #assert x.dim() == 5
-        #orig_shape = x.shape
-        #x = x.reshape(x.size(0), -1, *x.shape[3:])  # collapse T,C
+    def forward(self, x: torch.Tensor, regression_output: bool=False):
+        """ Forward pass - add a flag to optionally return the regression output, as this
+            is not always needed """
         x = self.image_proj(x)
 
         h = [x]
@@ -391,7 +389,8 @@ class ModernUnetRegressor(ModernUnet):
             h.append(x)
 
         x = self.middle(x)
-        y = self.regressor_block(x)
+        if regression_output:
+            y = self.regressor_block(x)
 
         for m in self.up:
             if isinstance(m, Upsample):
@@ -400,11 +399,10 @@ class ModernUnetRegressor(ModernUnet):
                 # Get the skip connection from first half of U-Net and concatenate
                 s = h.pop()
                 x = torch.cat((x, s), dim=1)
-                #
                 x = m(x)
 
         x = self.final(self.activation(self.norm(x)))
-        #x = x.reshape(
-        #    orig_shape[0], -1, (self.n_output_scalar_components + self.n_output_vector_components * 2), *orig_shape[3:]
-        #)
-        return x, y
+        if regression_output:
+            return x, y
+        else:
+            return x
