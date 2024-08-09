@@ -97,6 +97,46 @@ class RolloutResidualSystem(BaseRegSytem):
         return loss
 
 
+class RolloutResidualSystem2(BaseRegSytem):
+    """ Regress over multiple timesteps """
+    def __init__(self,network,config:dict):
+        super().__init__(network,config)
+        if "add_noise" in self.config:
+            self.add_noise=self.config["add_noise"]
+        else:
+            self.add_noise=None
+
+        ## Set num passes to be full trajectory
+        self.num_passes=self.config["rollout"]-1
+        ## Unless we have opted for a shorter rollout
+        if "short_rollout" in self.config:
+            assert self.config["short_rollout"]<=self.config["rollout"], "Short rollout is too long!"
+            self.num_passes=self.config["short_rollout"]
+
+    def step(self,batch,kind):
+        """ Evaluate loss function: residual field between two timesteps
+            x_t is the predicted state vector at time t """
+        x_data=batch
+        if self.add_noise:
+            noise=torch.randn_like(x_data)*self.add_noise
+            x_data=x_data+noise
+
+        loss=0
+        if self.config["input_channels"]==1:
+            x_data=x_data.unsqueeze(2)
+
+        for aa in range(0,self.num_passes):
+            if aa==0:
+                x_t=self(x_data[:,0])+x_data[:,0]
+            else:
+                x_t=self(x_t)+x_t
+            loss_dt=self.criterion(x_t,x_data[:,aa+1])
+            self.log(f"{kind}_loss_%d" % aa, loss_dt, on_step=False, on_epoch=True)
+            loss+=loss_dt
+            
+        self.log(f"{kind}_loss", loss, on_step=False, on_epoch=True)     
+        return loss
+
 class SlicedScoreSystem(BaseRegSytem):
     """ Sliced score matching loss with variance reduction
         eq 8 from https://arxiv.org/abs/1905.07088 """
