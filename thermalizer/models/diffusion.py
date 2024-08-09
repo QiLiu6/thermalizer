@@ -35,10 +35,10 @@ class Diffusion(nn.Module):
             self.time_embedding_dim=self.config["time_embedding_dim"]
         else:
             self.time_embedding_dim=None
-            
+
+
         self.silence=silence
-        self.sampled_times=[]
-        
+        self.sampled_times=[]        
 
         betas=self._cosine_variance_schedule(self.timesteps)
 
@@ -53,7 +53,7 @@ class Diffusion(nn.Module):
         
         self.model=model
 
-    def forward(self,x,noise):
+    def forward(self,x,noise, predict_noise_level=False):
         # x:NCHW
         ## Either uniform noise sampling, or selectively closer to 0
         ## here we use the absolute magnitude of a truncated normal with mean 0
@@ -76,8 +76,11 @@ class Diffusion(nn.Module):
         if self.time_embedding_dim:
             pred_noise=self.model(x_t,t)
         else:
-            pred_noise=self.model(x_t)
-
+            if predict_noise_level:
+                pred_noise,pred_noise_level=self.model(x_t,True)
+                return pred_noise,x_t,t,pred_noise_level
+            else:
+                pred_noise=self.model(x_t)
         return pred_noise,x_t,t
 
     def whiten_batch(self,batch):
