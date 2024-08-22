@@ -181,21 +181,28 @@ class Downsample(nn.Module):
 
 
 class RegressorBlock(nn.Module):
-    def __init__(self, mid_channels: int, mid_size: int, mlp_dim: int=256, activation: str = "gelu", norm: bool = False):
+    def __init__(self, mid_channels: int, mid_size: int, mlp_dim: int=256, out_dim: int=1,
+                         mlp_max: int=9024, activation: str = "gelu", norm: bool = False):
         """ Block to take the encoded middle layer, run through a 1x1 conv,
             then vectorise to an MLP to produce a scalar output. We will use this
             to try and predict the noise level in the fields.
             
             mid_channels: number of channels in the middle layer - used to define 1x1 conv
-            mid_size: image size in the middle layer - used to define MLP layer size """
+            mid_size: image size in the middle layer - used to define MLP layer size
+            """
         
         super().__init__()
+
+        ## Set number of channels to compress intermediate layer to
+        self.intermediate_filters=round(mlp_max/mid_size**2)
+        self.vector_size=(mid_size**2)*self.intermediate_filters
+        
         self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(activation, None)
         self.conv1=nn.Conv2d(mid_channels, mid_channels, kernel_size=(3, 3), padding=(1, 1))
-        self.conv2=nn.Conv2d(mid_channels, 1, kernel_size=(1, 1))
-        self.linear1=nn.Linear(mid_size**2, mlp_dim)
+        self.conv2=nn.Conv2d(mid_channels, self.intermediate_filters, kernel_size=(1, 1))
+        self.linear1=nn.Linear(self.vector_size, mlp_dim)
         self.linear2=nn.Linear(mlp_dim, mlp_dim)
-        self.linear3=nn.Linear(mlp_dim, 1)
+        self.linear3=nn.Linear(mlp_dim, out_dim)
 
         if norm:
             self.norm1 = nn.GroupNorm(n_groups, in_channels)
@@ -209,12 +216,11 @@ class RegressorBlock(nn.Module):
             produce scalar output """
         x = self.conv1(self.activation(self.norm1(x)))
         x = self.conv2(self.activation(self.norm2(x)))
-        x = x.reshape(x.shape[0],x.shape[2]*x.shape[3])
+        x = x.reshape(x.shape[0],x.shape[1]*x.shape[2]*x.shape[3])
         x = self.activation(self.linear1(x))
         x = self.activation(self.linear2(x))
         x = self.linear3(x)
         return x
-
 
 class ModernUnet(nn.Module):
     """Modern U-Net architecture
@@ -376,7 +382,8 @@ class ModernUnetRegressor(ModernUnet):
         super().__init__(config)
         self.config["model_type"]="ModernUnetRegressor"
         self.mid_dim=int(self.config["image_size"]/(2*(len(self.config["dim_mults"])-1)))
-        self.regressor_block=RegressorBlock(2*self.config["hidden_channels"]*self.config["dim_mults"][-1],self.mid_dim)
+        self.out_features=self.config["out_features"]
+        self.regressor_block=RegressorBlock(2*self.config["hidden_channels"]*self.config["dim_mults"][-1],self.mid_dim,out_dim=self.out_features)
 
     def forward(self, x: torch.Tensor, regression_output: bool=False):
         """ Forward pass - add a flag to optionally return the regression output, as this
@@ -406,3 +413,4 @@ class ModernUnetRegressor(ModernUnet):
             return x, y
         else:
             return x
+
