@@ -75,8 +75,13 @@ def load_diffusion_model(file_string):
             model_dict = pickle.load(fp)
         else:
             model_dict = CPU_Unpickler(fp).load()
-    model_cnn=unet.Unet(model_dict["config"])
-    model_cnn.load_state_dict(model_dict["state_dict"])
+    if model_dict["config"]["model_type"]=="Unet":
+        model_cnn=unet.Unet(model_dict["config"])
+        model_cnn.load_state_dict(model_dict["state_dict"])
+    elif model_dict["config"]["model_type"]=="ModernUnet":
+        model_cnn=munet.ModernUnet(model_dict["config"])
+        model_cnn.load_state_dict(model_dict["state_dict"])
+
     diffusion_model=diffusion.Diffusion(model_dict["config"], model=model_cnn)
     return diffusion_model
 
