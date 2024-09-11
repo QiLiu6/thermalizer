@@ -15,14 +15,17 @@ from torch.utils.data.sampler import RandomSampler
 
 import thermalizer.models.diffusion as diffusion
 import thermalizer.models.unet as unet
+import thermalizer.models.unet_modern as munet
 import thermalizer.dataset.datasets as datasets
 import thermalizer.kolmogorov.util as util
 
 config={}
 config["input_channels"]=1
 config["output_channels"]=1
-config["num_blocks"]=[2,2,2]
 config["hidden_channels"]=32
+config["activation"]="gelu"
+config["norm"]=False
+
 config["time_embedding_dim"]=128
 config["image_size"]=64
 config["noise_sampling_coeff"]=0.35
@@ -30,14 +33,14 @@ config["denoise_time"]=400
 config["activation"]="gelu"
 config["norm"]=False
 config["file_path"]="/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/diff.p"
-config["whitening"]="/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/white_10k.pt"
+#config["whitening"]="/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/white_10k.pt"
 config["input_channels"]=1
 config["output_channels"]=1
-config["subsample"]=50000
+config["subsample"]=None
 config["save_name"]="model_weights.pt"
 config["dim_mults"]=[2,4]
 config["base_dim"]=32
-config["timesteps"]=1000
+config["timesteps"]=5000
 #config["add_noise"]=1e-4
 config["optimization"]={}
 config["optimization"]["epochs"]=30
@@ -67,26 +70,6 @@ valid_loader = DataLoader(
 )
 
 device="cuda"
-
-## Set up fourier grid for calculating KE of validation imgs
-grid=util.fourierGrid(64)
-
-train_loader = DataLoader(
-    ds_train,
-    num_workers=10,
-    batch_size=config["optimization"]["batch_size"],
-    sampler=RandomSampler(ds_train),
-)
-valid_loader = DataLoader(
-    ds_valid,
-    num_workers=10,
-    batch_size=config["optimization"]["batch_size"],
-    sampler=RandomSampler(ds_valid),
-)
-
-device="cuda"
-
-## Set up fourier grid for calculating KE of validation imgs
 grid=util.fourierGrid(64)
 
 wandb.init(project="kol_diffusion",entity="chris-pedersen",config=config,dir="/scratch/cp3759/pyqg_data/wandb_runs")
@@ -107,9 +90,10 @@ optimizer=AdamW(model.parameters(),lr=config["optimization"]["lr"])
 scheduler=OneCycleLR(optimizer,config["optimization"]["lr"],total_steps=config["optimization"]["epochs"]*len(train_loader),pct_start=0.25,anneal_strategy='cos')
 loss_fn=nn.MSELoss(reduction='mean')
 
-global_steps=0
 for i in range(1,config["optimization"]["epochs"]):
     model.train()
+    epoch_train_loss=0
+    train_sample_counter=0
     ## Loop over batches
     for j,image in enumerate(train_loader):
         image=image.to(device)
@@ -120,12 +104,15 @@ for i in range(1,config["optimization"]["epochs"]):
         optimizer.step()
         optimizer.zero_grad()
         scheduler.step()
-        global_steps+=1
+        epoch_train_loss+=((loss.detach().cpu().item())*len(image))
+        train_sample_counter+=len(image)
 
     ## Push loss values for each epoch to wandb
+    ## We are just taking the train loss of the final batch
+    ## rather than averaging over all batches
     log_dic={}
     log_dic["epoch"]=i
-    log_dic["training_loss"]=(loss.detach().cpu().item()/(len(image)))
+    log_dic["training_loss"]=epoch_train_loss/train_sample_counter
 
     valid_imgs=next(iter(valid_loader))
     valid_imgs=valid_imgs.to(device)
@@ -163,8 +150,8 @@ for i in range(1,config["optimization"]["epochs"]):
     wandb.log({"Spectra":wandb.Image(fig_ke)})
     plt.close()
     
-    log_dic["denoise_loss"]=(valid_denoise_loss.detach().cpu().item()/(len(valid_imgs)))
-    log_dic["noise_loss"]=(noise_loss.detach().cpu().item()/(len(valid_imgs)))
+    log_dic["denoise_loss"]=valid_denoise_loss.detach().cpu().item()
+    log_dic["noise_loss"]=noise_loss.detach().cpu().item()
     wandb.log(log_dic)
 
 model.model.save_model()
