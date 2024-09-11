@@ -23,6 +23,12 @@ class Diffusion(nn.Module):
         else:
             self.noise_sampling_coeff=None
 
+        if self.config.get("timestep_train"):
+            self.timestep_train=self.config["timestep_train"]
+        else:
+            self.timestep_train=None
+        
+
         ## Check if we are using whitened fields
         if self.config.get("whitening"):
             whitening_transform=torch.load(self.config["whitening"])
@@ -65,7 +71,10 @@ class Diffusion(nn.Module):
             t=t*self.timesteps
             t=t.to(torch.int64).to(x.device)
         else:
-            t=torch.randint(0,self.timesteps,(x.shape[0],)).to(x.device)
+            if self.timestep_train:
+                t=torch.randint(0,self.timestep_train,(x.shape[0],)).to(x.device)
+            else:
+                t=torch.randint(0,self.timesteps,(x.shape[0],)).to(x.device)
         self.sampled_times.append(t)
 
         ## Whiten the input data if we are whitening
