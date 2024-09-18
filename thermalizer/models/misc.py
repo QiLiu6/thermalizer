@@ -7,10 +7,16 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
+from torchvision.datasets import MNIST
+from torchvision import transforms
+from torch.utils.data import DataLoader
+
+
 import thermalizer.models.diffusion as diffusion
 import thermalizer.models.cnn as cnn
 import thermalizer.models.unet as unet
 import thermalizer.models.unet_modern as munet
+import thermalizer.models.aunet as aunet
 import thermalizer.models.drn as drn
 
 
@@ -25,6 +31,67 @@ ACTIVATION_REGISTRY = {
     "sigmoid": nn.Sigmoid(),
 }
 
+
+#torchvision ema implementation
+#https://github.com/pytorch/vision/blob/main/references/classification/utils.py#L159
+class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
+    """Maintains moving averages of model parameters using an exponential decay.
+    ``ema_avg = decay * avg_model_param + (1 - decay) * model_param``
+    `torch.optim.swa_utils.AveragedModel <https://pytorch.org/docs/stable/optim.html#custom-averaging-strategies>`_
+    is used to compute the EMA.
+    """
+
+    def __init__(self, model, decay, device="cpu"):
+        def ema_avg(avg_model_param, model_param, num_averaged):
+            return decay * avg_model_param + (1 - decay) * model_param
+
+        super().__init__(model, device, ema_avg, use_buffers=True)
+
+## Noise timestep embedding
+def get_timestep_embedding(timesteps, embedding_dim: int):
+    """
+    Retrieved from https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#LL90C1-L109C13
+    """
+    assert len(timesteps.shape) == 1
+
+    half_dim = embedding_dim // 2
+    emb = math.log(10000) / (half_dim - 1)
+    emb = torch.exp(torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -emb)
+    emb = timesteps.type(torch.float32)[:, None] * emb[None, :]
+    emb = torch.concat([torch.sin(emb), torch.cos(emb)], axis=1)
+
+    if embedding_dim % 2 == 1:  # zero pad
+        emb = torch.nn.functional.pad(emb, (0, 1, 0, 0))
+
+    assert emb.shape == (timesteps.shape[0], embedding_dim), f"{emb.shape}"
+    return emb
+
+
+## Mnist helper function
+def create_mnist_dataloaders(batch_size,image_size=32,num_workers=8,single_number=None):
+    
+    preprocess=transforms.Compose([transforms.Resize(image_size),\
+                                    transforms.ToTensor()])
+
+    train_dataset=MNIST(root="/scratch/cp3759/mnist/",\
+                        train=True,\
+                        download=False,\
+                        transform=preprocess
+                        )
+    test_dataset=MNIST(root="/scratch/cp3759/mnist/",\
+                        train=False,\
+                        download=False,\
+                        transform=preprocess
+                        )
+
+    if single_number is not None:
+        single_digit_dexes=torch.where(train_dataset.targets==single_number)[0]
+        train_dataset.data=train_dataset.data[single_digit_dexes]
+        single_digit_dexes=torch.where(test_dataset.targets==single_number)[0]
+        test_dataset.data=test_dataset.data[single_digit_dexes]
+
+    return DataLoader(train_dataset,batch_size=batch_size,shuffle=True,num_workers=num_workers),\
+            DataLoader(test_dataset,batch_size=batch_size,shuffle=True,num_workers=num_workers)
 
 ########################## Loading models ################################
 ## Torch models trained using cuda and then pickled cannot be loaded
@@ -51,6 +118,8 @@ def load_model(file_string):
             model=unet.Unet(model_dict["config"])
         elif model_dict["config"]["model_type"]=="ModernUnet":
             model=munet.ModernUnet(model_dict["config"])
+        elif model_dict["config"]["model_type"]=="AUnet":
+            model=aunet.AUnet(model_dict["config"])
         elif model_dict["config"]["model_type"]=="ModernUnetRegressor":
             model=munet.ModernUnetRegressor(model_dict["config"])
         elif model_dict["config"]["model_type"]=="DRN":
@@ -80,6 +149,9 @@ def load_diffusion_model(file_string):
         model_cnn.load_state_dict(model_dict["state_dict"])
     elif model_dict["config"]["model_type"]=="ModernUnet":
         model_cnn=munet.ModernUnet(model_dict["config"])
+        model_cnn.load_state_dict(model_dict["state_dict"])
+    elif model_dict["config"]["model_type"]=="AUnet":
+        model_cnn=aunet.AUnet(model_dict["config"])
         model_cnn.load_state_dict(model_dict["state_dict"])
 
     diffusion_model=diffusion.Diffusion(model_dict["config"], model=model_cnn)
