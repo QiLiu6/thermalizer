@@ -99,7 +99,7 @@ for aa in range(1,config["optimization"]["epochs"]+1):
         optimizer.step()
         optimizer.zero_grad()
         #scheduler.step()
-        epoch_train_loss+=((loss.detach(). cpu().item())*len(image))
+        epoch_train_loss+=((loss.detach().cpu().item())*len(image))
         train_sample_counter+=len(image)
 
     log_dic={}
