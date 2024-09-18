@@ -25,17 +25,18 @@ class ResidualBlock(nn.Module):
         activation: str = "gelu",
         norm: bool = False,
         n_groups: int = 1,
+        time_embedding = None,
     ):
         super().__init__()
         self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(activation, None)
         if self.activation is None:
             raise NotImplementedError(f"Activation {activation} not implemented")
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=(3, 3), padding=(1, 1))
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=(3, 3), padding=(1, 1))
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=(3, 3), padding=(1, 1), padding_mode="circular")
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=(3, 3), padding=(1, 1), padding_mode="circular")
         # If the number of input channels is not equal to the number of output channels we have to
         # project the shortcut connection
         if in_channels != out_channels:
-            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=(1, 1))
+            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=(1, 1), padding_mode="circular")
         else:
             self.shortcut = nn.Identity()
 
@@ -45,14 +46,27 @@ class ResidualBlock(nn.Module):
         else:
             self.norm1 = nn.Identity()
             self.norm2 = nn.Identity()
+        if time_embedding:
+            self.time_embedding=time_embedding
+            self.dense1 = nn.Linear(time_embedding, out_channels)
+            self.dense2 = nn.Linear(time_embedding, out_channels)
+        else:
+            self.time_embedding=None
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, t=None):
         # First convolution layer
         h = self.conv1(self.activation(self.norm1(x)))
+        if self.time_embedding:
+            h += self.dense1(t)[:, :, None, None]
+            h = self.activation(h)
         # Second convolution layer
         h = self.conv2(self.activation(self.norm2(h)))
+        if self.time_embedding:
+            h += self.dense2(t)[:, :, None, None]
+            h = self.activation(h)
         # Add the shortcut connection and return
         return h + self.shortcut(x)
+
 
 class DownBlock(nn.Module):
     """Down block This combines [`ResidualBlock`][pdearena.modules.twod_unet.ResidualBlock] and [`AttentionBlock`][pdearena.modules.twod_unet.AttentionBlock].
@@ -74,16 +88,17 @@ class DownBlock(nn.Module):
         has_attn: bool = False,
         activation: str = "gelu",
         norm: bool = False,
+        time_embedding = None,
     ):
         super().__init__()
-        self.res = ResidualBlock(in_channels, out_channels, activation=activation, norm=norm)
+        self.res = ResidualBlock(in_channels, out_channels, activation=activation, norm=norm, time_embedding=time_embedding)
         if has_attn:
             self.attn = AttentionBlock(out_channels)
         else:
             self.attn = nn.Identity()
 
-    def forward(self, x: torch.Tensor):
-        x = self.res(x)
+    def forward(self, x: torch.Tensor, t=None):
+        x = self.res(x,t)
         x = self.attn(x)
         return x
 
@@ -102,16 +117,16 @@ class MiddleBlock(nn.Module):
         norm (bool, optional): Whether to use normalization. Defaults to False.
     """
 
-    def __init__(self, n_channels: int, has_attn: bool = False, activation: str = "gelu", norm: bool = False):
+    def __init__(self, n_channels: int, has_attn: bool = False, activation: str = "gelu", norm: bool = False, time_embedding = None):
         super().__init__()
-        self.res1 = ResidualBlock(n_channels, n_channels, activation=activation, norm=norm)
+        self.res1 = ResidualBlock(n_channels, n_channels, activation=activation, norm=norm,time_embedding=time_embedding)
         self.attn = AttentionBlock(n_channels) if has_attn else nn.Identity()
-        self.res2 = ResidualBlock(n_channels, n_channels, activation=activation, norm=norm)
+        self.res2 = ResidualBlock(n_channels, n_channels, activation=activation, norm=norm,time_embedding=time_embedding)
 
-    def forward(self, x: torch.Tensor):
-        x = self.res1(x)
+    def forward(self, x: torch.Tensor, t=None):
+        x = self.res1(x,t)
         x = self.attn(x)
-        x = self.res2(x)
+        x = self.res2(x,t)
         return x
 
 class UpBlock(nn.Module):
@@ -134,21 +149,21 @@ class UpBlock(nn.Module):
         has_attn: bool = False,
         activation: str = "gelu",
         norm: bool = False,
+        time_embedding = None,
     ):
         super().__init__()
         # The input has `in_channels + out_channels` because we concatenate the output of the same resolution
         # from the first half of the U-Net
-        self.res = ResidualBlock(in_channels + out_channels, out_channels, activation=activation, norm=norm)
+        self.res = ResidualBlock(in_channels + out_channels, out_channels, activation=activation, norm=norm, time_embedding=time_embedding)
         if has_attn:
             self.attn = AttentionBlock(out_channels)
         else:
             self.attn = nn.Identity()
 
-    def forward(self, x: torch.Tensor):
-        x = self.res(x)
+    def forward(self, x: torch.Tensor, t=None):
+        x = self.res(x, t)
         x = self.attn(x)
         return x
-
 
 class Upsample(nn.Module):
     r"""Scale up the feature map by $2 \times$
@@ -161,7 +176,7 @@ class Upsample(nn.Module):
         super().__init__()
         self.conv = nn.ConvTranspose2d(n_channels, n_channels, (4, 4), (2, 2), (1, 1))
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, t=None):
         return self.conv(x)
 
 
@@ -174,9 +189,9 @@ class Downsample(nn.Module):
 
     def __init__(self, n_channels):
         super().__init__()
-        self.conv = nn.Conv2d(n_channels, n_channels, (3, 3), (2, 2), (1, 1))
+        self.conv = nn.Conv2d(n_channels, n_channels, (3, 3), (2, 2), (1, 1), padding_mode="circular")
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, t=None):
         return self.conv(x)
 
 
@@ -198,8 +213,8 @@ class RegressorBlock(nn.Module):
         self.vector_size=(mid_size**2)*self.intermediate_filters
         
         self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(activation, None)
-        self.conv1=nn.Conv2d(mid_channels, mid_channels, kernel_size=(3, 3), padding=(1, 1))
-        self.conv2=nn.Conv2d(mid_channels, self.intermediate_filters, kernel_size=(1, 1))
+        self.conv1=nn.Conv2d(mid_channels, mid_channels, kernel_size=(3, 3), padding=(1, 1), padding_mode="circular")
+        self.conv2=nn.Conv2d(mid_channels, self.intermediate_filters, kernel_size=(1, 1), padding_mode="circular")
         self.linear1=nn.Linear(self.vector_size, mlp_dim)
         self.linear2=nn.Linear(mlp_dim, mlp_dim)
         self.linear3=nn.Linear(mlp_dim, out_dim)
@@ -255,13 +270,17 @@ class ModernUnet(nn.Module):
         
         insize = self.n_input_scalar_components
         # Project image into feature map
-        self.image_proj = nn.Conv2d(insize, n_channels, kernel_size=(3, 3), padding=(1, 1))
+        self.image_proj = nn.Conv2d(insize, n_channels, kernel_size=(3, 3), padding=(1, 1), padding_mode="circular")
         self.normBool=self.config["norm"]
         ## Define remaining stuff
         self.config["mid_attn"]=False
         self.mid_attn=self.config["mid_attn"]
         self.config["n_blocks"]=2
         self.is_attn=(False, False, False, False)
+        self.time_embedding=self.config["time_embedding_dim"]
+        if self.time_embedding:
+            self.time_mlp1=nn.Linear(self.time_embedding,self.time_embedding)
+            self.time_mlp2=nn.Linear(self.time_embedding,self.time_embedding)
 
         # #### First half of U-Net - decreasing resolution
         down = []
@@ -280,6 +299,7 @@ class ModernUnet(nn.Module):
                         has_attn=self.is_attn[i],
                         activation=self.config["activation"],
                         norm=self.normBool,
+                        time_embedding=self.time_embedding
                     )
                 )
                 in_channels = out_channels
@@ -291,7 +311,8 @@ class ModernUnet(nn.Module):
         self.down = nn.ModuleList(down)
 
         # Middle block
-        self.middle = MiddleBlock(out_channels, has_attn=self.mid_attn, activation=self.config["activation"], norm=self.normBool)
+        self.middle = MiddleBlock(out_channels, has_attn=self.mid_attn, activation=self.config["activation"],
+                                  norm=self.normBool, time_embedding=self.time_embedding)
 
         # #### Second half of U-Net - increasing resolution
         up = []
@@ -309,11 +330,13 @@ class ModernUnet(nn.Module):
                         has_attn=self.is_attn[i],
                         activation=self.config["activation"],
                         norm=self.normBool,
+                        time_embedding=self.time_embedding
                     )
                 )
             # Final block to reduce the number of channels
             out_channels = in_channels // self.config["dim_mults"][i]
-            up.append(UpBlock(in_channels, out_channels, has_attn=self.is_attn[i], activation=self.config["activation"], norm=self.normBool))
+            up.append(UpBlock(in_channels, out_channels, has_attn=self.is_attn[i], activation=self.config["activation"],
+                              norm=self.normBool, time_embedding=self.time_embedding))
             in_channels = out_channels
             # Up sample at all resolutions except last
             if i > 0:
@@ -328,30 +351,33 @@ class ModernUnet(nn.Module):
             self.norm = nn.Identity()
         out_channels = self.n_output_scalar_components
         #
-        self.final = nn.Conv2d(in_channels, out_channels, kernel_size=(3, 3), padding=(1, 1))
+        self.final = nn.Conv2d(in_channels, out_channels, kernel_size=(3, 3), 
+                            padding=(1, 1), padding_mode="circular")
 
-    def forward(self, x: torch.Tensor):
-        #assert x.dim() == 5
-        #orig_shape = x.shape
-        #x = x.reshape(x.size(0), -1, *x.shape[3:])  # collapse T,C
+    def forward(self, x: torch.Tensor, t=None):
         x = self.image_proj(x)
+        if self.time_embedding:
+            t = misc.get_timestep_embedding(t, self.time_embedding)
+            t = self.activation(self.time_mlp1(t))
+            t = self.activation(self.time_mlp2(t))
+            
 
         h = [x]
         for m in self.down:
-            x = m(x)
+            x = m(x,t)
             h.append(x)
 
-        x = self.middle(x)
+        x = self.middle(x,t)
 
         for m in self.up:
             if isinstance(m, Upsample):
-                x = m(x)
+                x = m(x,t)
             else:
                 # Get the skip connection from first half of U-Net and concatenate
                 s = h.pop()
                 x = torch.cat((x, s), dim=1)
                 #
-                x = m(x)
+                x = m(x,t)
 
         x = self.final(self.activation(self.norm(x)))
         #x = x.reshape(
