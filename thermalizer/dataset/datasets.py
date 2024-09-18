@@ -32,9 +32,14 @@ def parse_data_file(config):
         seed=config["seed"]
     else:
         seed=42
+
+    if config.get("train_ratio"):
+        train_ratio=config["train_ratio"]
+    else:
+        train_ratio=0.75
         
     ## Get train/valid splits & cut data
-    train_idx,valid_idx=get_split_indices(len(data))
+    train_idx,valid_idx=get_split_indices(len(data),seed,train_ratio)
     train_data=data[train_idx]/field_std
     valid_data=data[valid_idx]/field_std
 
@@ -100,8 +105,10 @@ def parse_data_file_qg(config):
     
     return train_data, valid_data, config
 
-def get_split_indices(set_size,seed=42,train_ratio=0.75,valid_ratio=0.25):
+def get_split_indices(set_size,seed=42,train_ratio=0.75):
     """ Get indices for train, valid and test splits """
+
+    valid_ratio=1-train_ratio
     
     rng = np.random.default_rng(seed)
     ## Randomly shuffle indices of entire dataset
