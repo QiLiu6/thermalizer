@@ -440,6 +440,72 @@ class KolmogorovAnimation():
         return 
         
 
+class LangevinAnimation():
+    def __init__(self,ds,model,fps=10,nSteps=1000,skip=50,noise_step=20,savestring=None,beta=0.001):
+        """ Diffuse
+            """
+        self.model=model
+        self.fps=fps
+        self.nSteps=nSteps
+        self.nFrames=int(self.nSteps)
+        self.pred=ds
+        self.skip=skip
+        self.beta=0.0001
+        self.noise_step=noise_step
+        self.savestring=savestring
+        self.beta=beta
+
+        self.i=0
+        
+    def _push_forward(self):
+        """ Update predicted q by one emulator pass """
+        for aa in range(self.skip):
+            self.pred=lang_step_naive(self.pred,self.noise_step,self.beta)
+            self.i+=1
+        
+        return
+    
+    def animate(self):
+        fig, self.axs = plt.subplots(2, 5,figsize=(14,6))
+        self.title=fig.suptitle("Thermalizer noise level %d, Langevin step %d"  % (self.noise_step, 0))
+        for aa,axes in enumerate(self.axs.flatten()):
+            axim=axes.imshow(self.pred[aa].squeeze().cpu(), cmap=sns.cm.icefire,interpolation='none')
+            fig.colorbar(axim, ax=axes)
+            axes.set_xticks([]); axes.set_yticks([])
+        fig.tight_layout()
+        
+        anim = animation.FuncAnimation(
+                                       fig, 
+                                       self.animate_func, 
+                                       frames = self.nFrames,
+                                       interval = 1000 / self.fps, # in ms
+                                       )
+        plt.close()
+        
+        if self.savestring:
+            print("saving")
+            # saving to m4 using ffmpeg writer 
+            writervideo = animation.FFMpegWriter(fps=self.fps) 
+            anim.save('%s.mp4' % self.savestring, writer=writervideo) 
+            plt.close()
+        else:
+            return HTML(anim.to_html5_video())
+        
+    def animate_func(self,i):
+        if i % self.fps == 0:
+            print(i, end =' ' )
+            
+        for aa,axes in enumerate(self.axs.flatten()):
+            self.title.set_text("Thermalizer noise level %d, Langevin step %d"  % (self.noise_step, self.i))
+            image=self.pred[aa].cpu().squeeze().numpy()
+            axim=axes.imshow(image, cmap=sns.cm.icefire,interpolation='none')
+            axim.set_clim(-np.max(np.abs(image)), np.max(np.abs(image)))
+        
+        self._push_forward()
+        
+        return 
+
+
 class ScoreAnimation():
     """ Animation to plot the score as we add incrementally increasing Gaussian noise
         to a held-out sample. """
