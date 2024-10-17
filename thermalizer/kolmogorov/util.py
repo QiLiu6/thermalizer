@@ -3,6 +3,7 @@ import jax_cfd.base.grids as grids
 from jax_cfd.spectral import utils as spectral_utils
 import copy
 import math
+import torch
 
 
 class fourierGrid():
@@ -113,4 +114,3 @@ def get_ke_batch(omega,fourier_grid):
     KEh=abs(vxhat**2)+abs(vyhat**2)
     kespec=fourier_grid.get_ispec_batch(KEh)
     return fourier_grid.k1d_plot,kespec
-    
