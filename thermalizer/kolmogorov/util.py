@@ -95,3 +95,22 @@ def get_ke(omega,fourier_grid):
     KEh=abs(vxhat**2)+abs(vyhat**2)
     kespec=fourier_grid.get_ispec(KEh)
     return fourier_grid.k1d_plot,kespec
+
+
+def get_ke_batch(omega,fourier_grid):
+    """ For a voriticity field and fourier grid, calculate isotropically averaged
+        KE spectra.
+        omega:        2D tensor of vorticity in real space
+        fourier_grid: Fourier grid object corresponding to the input vorticity field
+    returns:
+        k1d_plot: 1d wavenumber bins (centered)
+        kespec:   KE spectrum in each wavenumber bin
+    """
+    omegah=torch.fft.rfftn(omega,axis=(1,2))
+    grid = grids.Grid((omega.shape[-1], omega.shape[-1]), domain=((0, 2 * np.pi), (0, 2 * np.pi)))
+    velocity_solve = spectral_utils.vorticity_to_velocity(grid)
+    vxhat, vyhat = velocity_solve(omegah.cpu().numpy())
+    KEh=abs(vxhat**2)+abs(vyhat**2)
+    kespec=fourier_grid.get_ispec_batch(KEh)
+    return fourier_grid.k1d_plot,kespec
+    
