@@ -3,6 +3,7 @@ import thermalizer.models.misc as misc
 import torch
 from torch import nn
 import os
+import math
 import pickle
 
 ## Adapted from the beautiful repo at https://github.com/pdearena/pdearena/blob/main/pdearena/modules/twod_unet.py
@@ -197,7 +198,7 @@ class Downsample(nn.Module):
 
 class RegressorBlock(nn.Module):
     def __init__(self, mid_channels: int, mid_size: int, mlp_dim: int=256, out_dim: int=1,
-                         mlp_max: int=9024, activation: str = "gelu", norm: bool = False):
+                         mlp_max: int=4096, activation: str = "gelu", norm: bool = False):
         """ Block to take the encoded middle layer, run through a 1x1 conv,
             then vectorise to an MLP to produce a scalar output. We will use this
             to try and predict the noise level in the fields.
@@ -215,9 +216,8 @@ class RegressorBlock(nn.Module):
         self.activation: nn.Module = misc.ACTIVATION_REGISTRY.get(activation, None)
         self.conv1=nn.Conv2d(mid_channels, mid_channels, kernel_size=(3, 3), padding=(1, 1), padding_mode="circular")
         self.conv2=nn.Conv2d(mid_channels, self.intermediate_filters, kernel_size=(1, 1), padding_mode="circular")
-        self.linear1=nn.Linear(self.vector_size, mlp_dim)
-        self.linear2=nn.Linear(mlp_dim, mlp_dim)
-        self.linear3=nn.Linear(mlp_dim, out_dim)
+        self.linear1=nn.Linear(self.vector_size, out_dim)
+        self.linear2=nn.Linear(out_dim, out_dim)
 
         if norm:
             self.norm1 = nn.GroupNorm(n_groups, in_channels)
@@ -233,8 +233,7 @@ class RegressorBlock(nn.Module):
         x = self.conv2(self.activation(self.norm2(x)))
         x = x.reshape(x.shape[0],x.shape[1]*x.shape[2]*x.shape[3])
         x = self.activation(self.linear1(x))
-        x = self.activation(self.linear2(x))
-        x = self.linear3(x)
+        x = self.linear2(x)
         return x
 
 class ModernUnet(nn.Module):
@@ -277,7 +276,7 @@ class ModernUnet(nn.Module):
         self.mid_attn=self.config["mid_attn"]
         self.config["n_blocks"]=2
         self.is_attn=(False, False, False, False)
-        self.time_embedding=self.config["time_embedding_dim"]
+        self.time_embedding=self.config.get("time_embedding_dim") ## None if time embeddings are not selected
         if self.time_embedding:
             self.time_mlp1=nn.Linear(self.time_embedding,self.time_embedding)
             self.time_mlp2=nn.Linear(self.time_embedding,self.time_embedding)
@@ -407,9 +406,10 @@ class ModernUnetRegressor(ModernUnet):
     def __init__(self,config):
         super().__init__(config)
         self.config["model_type"]="ModernUnetRegressor"
-        self.mid_dim=int(self.config["image_size"]/(2*(len(self.config["dim_mults"])-1)))
-        self.out_features=self.config["out_features"]
-        self.regressor_block=RegressorBlock(2*self.config["hidden_channels"]*self.config["dim_mults"][-1],self.mid_dim,out_dim=self.out_features)
+        self.mid_pix=int(self.config["image_size"]/(2*(len(self.config["dim_mults"])-1)))
+        self.mid_channels=self.config["hidden_channels"]*math.prod(self.config["dim_mults"])
+        self.out_features=self.config["timesteps"]
+        self.regressor_block=RegressorBlock(self.mid_channels,self.mid_pix,out_dim=self.out_features)
 
     def forward(self, x: torch.Tensor, regression_output: bool=False):
         """ Forward pass - add a flag to optionally return the regression output, as this
