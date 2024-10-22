@@ -7,6 +7,26 @@ import pickle
 ## Just hardcode this for Kolmogorov fields
 field_std=4.44
 
+
+def get_batch_indices(num_samps,batch_size,seed=42):
+    """ For a given number of samples, return a list of batch indices
+        num_samps:  total number of samples (i.e. length of training/valid/test set
+        batch_size: batch size
+        seed:       random seed
+        
+        returns a list of lists, each sublist containing the indices for each batch """
+
+    rng = torch.Generator()
+    rng.manual_seed(seed)
+
+    idx=torch.randperm(num_samps,generator=rng)
+    ## Break indices into lists of length batch size
+    batches=[]
+    for aa in range(0,num_samps,batch_size):
+        batches.append(idx[aa:aa+batch_size])
+    return batches
+
+
 def parse_data_file(config):
     """ From a config dict, this function will:
     1. load and normalise data from the file path
