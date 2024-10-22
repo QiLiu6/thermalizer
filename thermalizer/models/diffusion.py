@@ -118,6 +118,7 @@ class Diffusion(nn.Module):
     def sampling(self,n_samples,clipped_reverse_diffusion=None,device="cuda"):
         """ Generate fresh samples from pure noise """
         x_t=torch.randn((n_samples,self.in_channels,self.image_size,self.image_size)).to(device)
+
         for i in tqdm(range(self.timesteps-1,-1,-1),desc="Sampling",disable=self.silence):
             noise=torch.randn_like(x_t).to(device)
             t=torch.tensor([i for _ in range(n_samples)]).to(device)

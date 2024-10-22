@@ -68,7 +68,7 @@ def get_timestep_embedding(timesteps, embedding_dim: int):
 
 
 ## Mnist helper function
-def create_mnist_dataloaders(batch_size,image_size=32,num_workers=8,single_number=None):
+def create_mnist_dataloaders(batch_size,image_size=32,num_workers=8,single_number=None,test_batch_size=None):
     
     preprocess=transforms.Compose([transforms.Resize(image_size),\
                                     transforms.ToTensor()])
@@ -90,8 +90,13 @@ def create_mnist_dataloaders(batch_size,image_size=32,num_workers=8,single_numbe
         single_digit_dexes=torch.where(test_dataset.targets==single_number)[0]
         test_dataset.data=test_dataset.data[single_digit_dexes]
 
+    if test_batch_size:
+        test_batch=test_batch_size
+    else:
+        test_batch=batch_size
+
     return DataLoader(train_dataset,batch_size=batch_size,shuffle=True,num_workers=num_workers),\
-            DataLoader(test_dataset,batch_size=batch_size,shuffle=True,num_workers=num_workers)
+            DataLoader(test_dataset,batch_size=test_batch,shuffle=True,num_workers=num_workers)
 
 ########################## Loading models ################################
 ## Torch models trained using cuda and then pickled cannot be loaded
