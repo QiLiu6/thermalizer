@@ -159,6 +159,7 @@ class Diffusion(nn.Module):
             
         return x_t, noised
     
+
     def _cosine_variance_schedule(self,timesteps,epsilon= 0.008):
         steps=torch.linspace(0,timesteps,steps=timesteps+1,dtype=torch.float32)
         f_t=torch.cos(((steps/timesteps+epsilon)/(1.0+epsilon))*math.pi*0.5)**2
@@ -166,7 +167,23 @@ class Diffusion(nn.Module):
 
         return betas
 
-    def _forward_diffusion(self,x_0,t,noise):
+    def _forward_diffusion(self,x_0,t,noise=None):
+        """ Run forward diffusion process, i.e. add noise to some input images
+        x_0:    input tensors to add noise to
+        t:      noise level to add. Can be either a tensor with same length x_0, in which case
+                each image can be noised differently. Or just pass a scalar, and the same level of noise
+                will be added to each image
+        noise:  Tensor of random noise. Can be None, in which case we will generate noise here
+        
+        returns a tensor of the same shape x_0, where each image has been noised """
+
+        ## If t is just an int, create a tensor for the forward process
+        if type(t)==int:
+            t=t*torch.ones(len(x_0),device=x_0.device,dtype=torch.int64)
+
+        if noise==None:
+            noise=torch.randn_like(x_0).to(x_0.device)
+
         assert x_0.shape==noise.shape
         #q(x_{t}|x_{0})
         return self.sqrt_alphas_cumprod.gather(-1,t).reshape(x_0.shape[0],1,1,1)*x_0+ \
