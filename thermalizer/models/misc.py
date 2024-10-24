@@ -67,7 +67,38 @@ def get_timestep_embedding(timesteps, embedding_dim: int):
     return emb
 
 
-## Mnist helper function
+## Mnist helper functions
+def create_mnist_datasets(image_size=32,single_number=None):
+    """ Return mnist datasets (not dataloaders)
+        image_size:   resolution of images
+        single_numer: if we want to return a dataset containing only
+                      a single class of the mnist numbers
+
+        returns: train_dataset, test_dataset
+    """
+    
+    preprocess=transforms.Compose([transforms.Resize(image_size),\
+                                    transforms.ToTensor()])
+
+    train_dataset=MNIST(root="/scratch/cp3759/mnist/",\
+                        train=True,\
+                        download=False,\
+                        transform=preprocess
+                        )
+    test_dataset=MNIST(root="/scratch/cp3759/mnist/",\
+                        train=False,\
+                        download=False,\
+                        transform=preprocess
+                        )
+
+    if single_number is not None:
+        single_digit_dexes=torch.where(train_dataset.targets==single_number)[0]
+        train_dataset.data=train_dataset.data[single_digit_dexes]
+        single_digit_dexes=torch.where(test_dataset.targets==single_number)[0]
+        test_dataset.data=test_dataset.data[single_digit_dexes]
+        
+    return train_dataset, test_dataset
+
 def create_mnist_dataloaders(batch_size,image_size=32,num_workers=8,single_number=None,test_batch_size=None):
     
     preprocess=transforms.Compose([transforms.Resize(image_size),\
@@ -157,6 +188,9 @@ def load_diffusion_model(file_string):
         model_cnn.load_state_dict(model_dict["state_dict"])
     elif model_dict["config"]["model_type"]=="AUnet":
         model_cnn=aunet.AUnet(model_dict["config"])
+        model_cnn.load_state_dict(model_dict["state_dict"])
+    elif model_dict["config"]["model_type"]=="ModernUnetRegressor":
+        model_cnn=munet.ModernUnetRegressor(model_dict["config"])
         model_cnn.load_state_dict(model_dict["state_dict"])
 
     diffusion_model=diffusion.Diffusion(model_dict["config"], model=model_cnn)
