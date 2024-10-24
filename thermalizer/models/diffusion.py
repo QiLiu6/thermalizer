@@ -158,7 +158,39 @@ class Diffusion(nn.Module):
             noised=self.dewhiten_batch(noised)
             
         return x_t, noised
-    
+
+    def denoise_heterogen(self,x,denoising_timesteps,forward_diff=False):
+        """ Here we want to pass some noised fields, x, and denoise from some arbitrary
+            number of noise timesteps. We call this heterogenuous denoising.            
+            Essentially we start denoising from the highest
+            timestep, and include other images in the reverse process
+            as we iterate. Arguments:
+
+            x:                   images to be denoised
+            denoising_timesteps: timesteps to denoise from, must be same length as x
+            forward_diff:        add noise to x before denoising?
+            
+            returns x, denoised tensor """
+
+        start_step=max(denoising_timesteps)
+        if forward_diff:
+            noise=torch.randn_like(x).to(x.device)
+            x=self._forward_diffusion(x,denoising_timesteps,noise)
+
+        for i in tqdm(range(start_step-1,-1,-1),desc="Denoising",disable=self.silence):
+            selected=denoising_timesteps>=i
+            selected_images=x[selected]
+            noise=torch.randn_like(selected_images,device=x.device)
+            t=torch.tensor([i for _ in range(len(selected_images))]).to(x.device)
+            ## Take a reverse process step on only selected images
+            denoising_t=self._reverse_diffusion(selected_images,t,noise)
+            ## Rebroadcast stepped tensors to x
+            inc=0
+            for xx,sel in enumerate(selected):
+                if sel:
+                    x[xx]=denoising_t[inc]
+                    inc+=1
+        return x
 
     def _cosine_variance_schedule(self,timesteps,epsilon= 0.008):
         steps=torch.linspace(0,timesteps,steps=timesteps+1,dtype=torch.float32)
