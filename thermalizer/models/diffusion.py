@@ -159,6 +159,7 @@ class Diffusion(nn.Module):
             
         return x_t, noised
 
+    @torch.no_grad()
     def denoise_heterogen(self,x,denoising_timesteps,forward_diff=False):
         """ Here we want to pass some noised fields, x, and denoise from some arbitrary
             number of noise timesteps. We call this heterogenuous denoising.            
