@@ -160,7 +160,7 @@ class Diffusion(nn.Module):
         return x_t, noised
 
     @torch.no_grad()
-    def denoise_heterogen(self,x,denoising_timesteps,forward_diff=False):
+    def denoise_heterogen(self,x,denoising_timesteps,stop=-1,forward_diff=False):
         """ Here we want to pass some noised fields, x, and denoise from some arbitrary
             number of noise timesteps. We call this heterogenuous denoising.            
             Essentially we start denoising from the highest
@@ -169,6 +169,7 @@ class Diffusion(nn.Module):
 
             x:                   images to be denoised
             denoising_timesteps: timesteps to denoise from, must be same length as x
+            stop:                noise timestep to stop at
             forward_diff:        add noise to x before denoising?
             
             returns x, denoised tensor """
@@ -178,7 +179,7 @@ class Diffusion(nn.Module):
             noise=torch.randn_like(x).to(x.device)
             x=self._forward_diffusion(x,denoising_timesteps,noise)
 
-        for i in tqdm(range(start_step-1,-1,-1),desc="Denoising",disable=self.silence):
+        for i in tqdm(range(start_step-1,stop,-1),desc="Denoising",disable=self.silence):
             selected=denoising_timesteps>=i
             selected_images=x[selected]
             noise=torch.randn_like(selected_images,device=x.device)
