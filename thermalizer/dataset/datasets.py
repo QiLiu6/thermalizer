@@ -98,8 +98,12 @@ def parse_data_file_qg(config):
     with open(config["file_path"], "rb") as input_file:
         data = torch.load(input_file)
 
-    data[:,:,0,:,:]/=upper_std
-    data[:,:,1,:,:]/=lower_std
+    if len(data.shape)==5:
+        data[:,:,0,:,:]/=upper_std
+        data[:,:,1,:,:]/=lower_std
+    else:
+        data[:,0,:,:]/=upper_std
+        data[:,1,:,:]/=lower_std
 
     ## Subsample data if requested
     if "subsample" in config.keys():
@@ -111,9 +115,14 @@ def parse_data_file_qg(config):
         seed=config["seed"]
     else:
         seed=42
+
+    if config.get("train_ratio"):
+        train_ratio=config["train_ratio"]
+    else:
+        train_ratio=0.75
         
     ## Get train/valid splits & cut data
-    train_idx,valid_idx=get_split_indices(len(data))
+    train_idx,valid_idx=get_split_indices(len(data),seed,train_ratio)
     train_data=data[train_idx]
     valid_data=data[valid_idx]
 
