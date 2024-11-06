@@ -375,7 +375,7 @@ class ModernUnet(nn.Module):
                 # Get the skip connection from first half of U-Net and concatenate
                 s = h.pop()
                 x = torch.cat((x, s), dim=1)
-                #
+                #   
                 x = m(x,t)
 
         x = self.final(self.activation(self.norm(x)))
@@ -410,6 +410,7 @@ class ModernUnetRegressor(ModernUnet):
         self.mid_channels=self.config["hidden_channels"]*math.prod(self.config["dim_mults"])
         self.out_features=self.config["timesteps"]
         self.regressor_block=RegressorBlock(self.mid_channels,self.mid_pix,out_dim=self.out_features)
+        self.softmax=nn.Softmax(dim=1)
 
     def forward(self, x: torch.Tensor, regression_output: bool=False):
         """ Forward pass - add a flag to optionally return the regression output, as this
@@ -439,4 +440,16 @@ class ModernUnetRegressor(ModernUnet):
             return x, y
         else:
             return x
+
+    def noise_class(self, x: torch.Tensor):
+        """ Forward pass with only a regressor output - skipping the conv upsampling output for the
+            score field prediction  """
+
+        x = self.image_proj(x)
+        for m in self.down:
+            x = m(x)
+        x = self.middle(x)
+        x = self.softmax(self.regressor_block(x))
+        return x.argmax(1)
+
 
