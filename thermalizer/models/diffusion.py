@@ -178,9 +178,12 @@ class Diffusion(nn.Module):
         if forward_diff:
             noise=torch.randn_like(x).to(x.device)
             x=self._forward_diffusion(x,denoising_timesteps,noise)
+        
+        therm_count=torch.zeros(len(x),device="cuda")
 
         for i in tqdm(range(start_step-1,stop,-1),desc="Denoising",disable=self.silence):
             selected=denoising_timesteps>=i
+            therm_count+=selected
             selected_images=x[selected]
             noise=torch.randn_like(selected_images,device=x.device)
             t=torch.tensor([i for _ in range(len(selected_images))]).to(x.device)
@@ -192,7 +195,7 @@ class Diffusion(nn.Module):
                 if sel:
                     x[xx]=denoising_t[inc]
                     inc+=1
-        return x
+        return x.squeeze(), therm_count
 
     def _cosine_variance_schedule(self,timesteps,epsilon= 0.008):
         steps=torch.linspace(0,timesteps,steps=timesteps+1,dtype=torch.float32)
