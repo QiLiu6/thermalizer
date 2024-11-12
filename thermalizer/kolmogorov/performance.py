@@ -32,7 +32,8 @@ def therm_algo_1(n_steps=-1,start=10,stop=4):
             preds=softmax(out[1])
             noise_classes[:,aa]=preds.argmax(1).cpu()
             if max(preds.argmax(1).cpu())>start:
-                state_vector[:,aa],therming_counts[:,aa]=model_therm.denoise_heterogen(state_vector[:,aa].unsqueeze(1),preds.argmax(1),stop=stop,forward_diff=True)
+                thermed,therming_counts[:,aa]=model_therm.denoise_heterogen(state_vector[:,aa].unsqueeze(1),preds.argmax(1),stop=stop,forward_diff=True)
+                state_vector[:,aa]=thermed.squeeze()
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
     return state_vector, enstrophies, noise_classes, therming_counts
 
@@ -64,7 +65,7 @@ def therm_algo_2(n_steps=-1,start=10,stop=4):
             if len(therming)>0:
                 thermed,counts=model_therm.denoise_heterogen(therming,preds[therm_select],stop=stop,forward_diff=True)
                 for bb,idx in enumerate(torch.argwhere(therm_select).flatten()):
-                    state_vector[idx,aa]=thermed[bb]
+                    state_vector[idx,aa]=thermed[bb].squeeze()
                     therming_counts[idx,aa]=counts[bb]
     state_vector=state_vector.to("cpu")
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))

@@ -195,7 +195,7 @@ class Diffusion(nn.Module):
                 if sel:
                     x[xx]=denoising_t[inc]
                     inc+=1
-        return x.squeeze(), therm_count
+        return x, therm_count
 
     def _cosine_variance_schedule(self,timesteps,epsilon= 0.008):
         steps=torch.linspace(0,timesteps,steps=timesteps+1,dtype=torch.float32)
