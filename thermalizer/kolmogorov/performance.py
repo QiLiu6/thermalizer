@@ -10,6 +10,67 @@ import thermalizer.kolmogorov.util as util
 from tqdm import tqdm
 
 
+####
+### Functions to thermalize trajectories
+###
+
+def therm_algo_1(n_steps=-1,start=10,stop=4):
+    """ Thermalization algorithm 1 - what I originally tested, passing whole batch to
+        thermalizer model"""
+    ## Set up state and diagnostic tensors
+    state_vector=torch.zeros_like(test_suite["data"][:,:n_steps,:,:])
+    ## Set ICs
+    state_vector[:,0]=test_suite["data"][:,0,:,:]
+    state_vector=state_vector.to("cuda")
+    noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
+    therming_counts=torch.zeros(len(state_vector[1]))
+
+    with torch.no_grad(): 
+        for aa in tqdm(range(1,len(state_vector[1]))):
+            state_vector[:,aa]=model_emu(state_vector[:,aa-1].unsqueeze(1)).squeeze()+state_vector[:,aa-1]
+            out=model_therm.model(state_vector[:,aa].unsqueeze(1),True)
+            preds=softmax(out[1])
+            noise_classes[:,aa]=preds.argmax(1).cpu()
+            if max(preds.argmax(1).cpu())>start:
+                therming_counts[aa]=1
+                state_vector[:,aa]=model_therm.denoise_heterogen(state_vector[:,aa].unsqueeze(1),preds.argmax(1),stop=stop,forward_diff=True).squeeze()
+    return state_vector, enstrophies, noise_classes, therming_counts
+
+
+def therm_algo_2(n_steps=-1,start=10,stop=4):
+    """ Thermalization algorithm 2 - only taking fields above
+        initialisation criteria """
+
+    ## Set up state and diagnostic tensors
+    state_vector=torch.zeros_like(test_suite["data"][:,:n_steps,:,:])
+    ## Set ICs
+    state_vector[:,0]=test_suite["data"][:,0,:,:]
+    state_vector=state_vector.to("cuda")
+    noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
+    therming_counts=torch.zeros(len(state_vector[1]))
+
+    ## Run
+    with torch.no_grad(): 
+        for aa in tqdm(range(1,len(state_vector[1]))):
+            ## Emulator step
+            state_vector[:,aa]=model_emu(state_vector[:,aa-1].unsqueeze(1)).squeeze()+state_vector[:,aa-1]
+            ## Noise level check
+            preds=model_therm.model.noise_class(state_vector[:,aa].unsqueeze(1))
+            noise_classes[:,aa]=preds.cpu() ## Store noise levels
+            ## Indices of thermalized fields
+            therm_select=preds>(start)
+            therming=state_vector[therm_select,aa].unsqueeze(1)
+            ## If we have any fields over threshold, run therm
+            if len(therming)>0:
+                therming_counts[aa]=1
+                thermed=model_therm.denoise_heterogen(therming,preds[therm_select],stop=stop,forward_diff=True)
+                for bb,idx in enumerate(torch.argwhere(therm_select).flatten()):
+                    state_vector[idx,aa]=thermed[bb].squeeze()
+    state_vector=state_vector.to("cpu")
+    enstrophies2=(abs(state_vector**2).sum(axis=(2,3)))
+    
+    return state_vector, enstrophies, noise_classes, therming_counts
+
 class EmulatorRollout():
     """ Run a batch of emulator rollouts along test trajectories """
     def __init__(self,test_suite,model_emu):
