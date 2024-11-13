@@ -11,59 +11,99 @@ from tqdm import tqdm
 
 
 ####
-### Functions to thermalize trajectories
+### Functions to run emulator and thermalize trajectories
 ###
-
-def therm_algo_1(n_steps=-1,start=10,stop=4):
-    """ Thermalization algorithm 1 - what I originally tested, passing whole batch to
-        thermalizer model"""
+def run_emu(ics,emu,therm=None,n_steps=1000,silent=False):
+    """ Run an emuluator on some ICs
+        ics:     initial conditions for emulator
+        emu:     torch emulator model
+        therm:   diffusion model object - pass this if we want to
+                 also classify the noise level during rollout
+        n_steps: how many emulator steps to run
+        silent:  silence tqdm progress bar (for slurm scripts) """
     ## Set up state and diagnostic tensors
-    state_vector=torch.zeros_like(test_suite["data"][:,:n_steps,:,:])
+    state_vector=torch.zeros((len(ics),n_steps,64,64),device="cuda")
     ## Set ICs
-    state_vector[:,0]=test_suite["data"][:,0,:,:]
+    state_vector[:,0]=ics
+    state_vector=state_vector.to("cuda")
+    noise_classes=None
+    if therm:
+        noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
+
+    with torch.no_grad(): 
+        for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
+            state_vector[:,aa]=emu(state_vector[:,aa-1].unsqueeze(1)).squeeze()+state_vector[:,aa-1]
+            if therm:
+                preds=therm.model.noise_class(state_vector[:,aa].unsqueeze(1))
+                noise_classes[:,aa]=preds.cpu()
+    enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
+    return state_vector, enstrophies, noise_classes
+
+
+def therm_algo_1(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False):
+    """ Thermalization algorithm 1 - what I originally tested, passing whole batch to
+        thermalizer model:
+        ics:     initial conditions for emulator
+        emu:     torch emulator model
+        therm:   diffusion model object
+        n_steps: how many emulator steps to run
+        start:   noise level to start thermalizing
+        stop:    noise level to stop thermalizing
+        forward: Add forward diffusion noise when thermalizing
+        silent:  silence tqdm progress bar (for slurm scripts) """
+    ## Set up state and diagnostic tensors
+    state_vector=torch.zeros((len(ics),n_steps,64,64),device="cuda")
+    ## Set ICs
+    state_vector[:,0]=ics
     state_vector=state_vector.to("cuda")
     noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
     therming_counts=torch.zeros_like(noise_classes)
 
     with torch.no_grad(): 
-        for aa in tqdm(range(1,len(state_vector[1]))):
-            state_vector[:,aa]=model_emu(state_vector[:,aa-1].unsqueeze(1)).squeeze()+state_vector[:,aa-1]
-            out=model_therm.model(state_vector[:,aa].unsqueeze(1),True)
-            preds=softmax(out[1])
-            noise_classes[:,aa]=preds.argmax(1).cpu()
-            if max(preds.argmax(1).cpu())>start:
-                thermed,therming_counts[:,aa]=model_therm.denoise_heterogen(state_vector[:,aa].unsqueeze(1),preds.argmax(1),stop=stop,forward_diff=True)
+        for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
+            state_vector[:,aa]=emu(state_vector[:,aa-1].unsqueeze(1)).squeeze()+state_vector[:,aa-1]
+            preds=therm.model.noise_class(state_vector[:,aa].unsqueeze(1))
+            noise_classes[:,aa]=preds.cpu()
+            if max(preds)>start:
+                thermed,therming_counts[:,aa]=therm.denoise_heterogen(state_vector[:,aa].unsqueeze(1),preds,stop=stop,forward_diff=True)
                 state_vector[:,aa]=thermed.squeeze()
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
     return state_vector, enstrophies, noise_classes, therming_counts
 
 
-def therm_algo_2(n_steps=-1,start=10,stop=4):
-    """ Thermalization algorithm 2 - only passing fields above
-        initialisation criteria to the thermalizer """
+def therm_algo_2(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False):
+    """ Thermalization algorithm 2 - correct algo where we only thermalize elements over the
+        initialisation threshold:
+        ics:     initial conditions for emulator
+        emu:     torch emulator model
+        therm:   diffusion model object
+        n_steps: how many emulator steps to run
+        start:   noise level to start thermalizing
+        stop:    noise level to stop thermalizing
+        forward: Add forward diffusion noise when thermalizing
+        silent:  silence tqdm progress bar (for slurm scripts) """
 
     ## Set up state and diagnostic tensors
-    state_vector=torch.zeros_like(test_suite["data"][:,:n_steps,:,:])
+    state_vector=torch.zeros((len(ics),n_steps,64,64),device="cuda")
     ## Set ICs
-    state_vector[:,0]=test_suite["data"][:,0,:,:]
-    state_vector=state_vector.to("cuda")
+    state_vector[:,0]=ics
     noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
     therming_counts=torch.zeros_like(noise_classes)
     
     ## Run
     with torch.no_grad(): 
-        for aa in tqdm(range(1,len(state_vector[1]))):
+        for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
             ## Emulator step
-            state_vector[:,aa]=model_emu(state_vector[:,aa-1].unsqueeze(1)).squeeze()+state_vector[:,aa-1]
+            state_vector[:,aa]=emu(state_vector[:,aa-1].unsqueeze(1)).squeeze()+state_vector[:,aa-1]
             ## Noise level check
-            preds=model_therm.model.noise_class(state_vector[:,aa].unsqueeze(1))
+            preds=therm.model.noise_class(state_vector[:,aa].unsqueeze(1))
             noise_classes[:,aa]=preds.cpu() ## Store noise levels
             ## Indices of thermalized fields
             therm_select=preds>(start)
             therming=state_vector[therm_select,aa].unsqueeze(1)
             ## If we have any fields over threshold, run therm
             if len(therming)>0:
-                thermed,counts=model_therm.denoise_heterogen(therming,preds[therm_select],stop=stop,forward_diff=True)
+                thermed,counts=therm.denoise_heterogen(therming,preds[therm_select],stop=stop,forward_diff=True)
                 for bb,idx in enumerate(torch.argwhere(therm_select).flatten()):
                     state_vector[idx,aa]=thermed[bb].squeeze()
                     therming_counts[idx,aa]=counts[bb]
