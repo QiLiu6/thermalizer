@@ -114,3 +114,26 @@ def get_ke_batch(omega,fourier_grid):
     KEh=abs(vxhat**2)+abs(vyhat**2)
     kespec=fourier_grid.get_ispec_batch(KEh)
     return fourier_grid.k1d_plot,kespec
+
+
+def spectral_similarity(batch1,batch2):
+    """ Compare KE spectra for 2 batches of KE spectra. Assuming the first
+        has no NaNs, i.e. this is a reference batch from a simulation 
+        Returns the normalised MSE across stable samples, and the number
+        of spectra that were nan/inf """
+
+    norm_factors=batch1.mean(axis=0)
+    nan_counter=0
+    samp_counter=0
+    running_ave=0
+    for bb in range(len(batch1[1])):
+        normed_batch1=batch1[bb]/norm_factors
+        normed_batch2=batch2[bb]/norm_factors
+        mse=np.sqrt((normed_batch1-normed_batch2)**2).sum()
+        if math.isnan(mse) or math.isinf(mse):
+            nan_counter+=1
+        else:
+            running_ave+=mse
+            samp_counter+=1
+    mse_tot=running_ave/samp_counter
+    return mse_tot, nan_counter
