@@ -65,7 +65,7 @@ def therm_algo_1(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fa
             preds=therm.model.noise_class(state_vector[:,aa].unsqueeze(1))
             noise_classes[:,aa]=preds.cpu()
             if max(preds)>start:
-                thermed,therming_counts[:,aa]=therm.denoise_heterogen(state_vector[:,aa].unsqueeze(1),preds,stop=stop,forward_diff=True)
+                thermed,therming_counts[:,aa]=therm.denoise_heterogen(state_vector[:,aa].unsqueeze(1),preds,stop=stop,forward_diff=forward)
                 state_vector[:,aa]=thermed.squeeze()
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
     return state_vector, enstrophies, noise_classes, therming_counts
@@ -103,7 +103,7 @@ def therm_algo_2(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fa
             therming=state_vector[therm_select,aa].unsqueeze(1)
             ## If we have any fields over threshold, run therm
             if len(therming)>0:
-                thermed,counts=therm.denoise_heterogen(therming,preds[therm_select],stop=stop,forward_diff=True)
+                thermed,counts=therm.denoise_heterogen(therming,preds[therm_select],stop=stop,forward_diff=forward)
                 for bb,idx in enumerate(torch.argwhere(therm_select).flatten()):
                     state_vector[idx,aa]=thermed[bb].squeeze()
                     therming_counts[idx,aa]=counts[bb]
