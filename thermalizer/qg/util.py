@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import torch_qg.model as torch_model
 
 
@@ -56,14 +57,13 @@ def get_ke_batch(pv_batch,normed=True,qg_model=None):
         """
     
     if normed:
-        pv_batch=util.denormalize_qg(pv_batch)
+        pv_batch=denormalize_qg(pv_batch)
         
     if qg_model is None:
         qg_model=torch_model.PseudoSpectralModel(nx=64,dt=3600,dealias=True,)
     ke_batch=np.zeros((len(pv_batch),23))
     
     for aa in range(len(pv_batch)):
-        _,ke=util.get_ke_qg(pv_batch[aa],qg_model=qg_model)
+        _,ke=get_ke_qg(pv_batch[aa],qg_model=qg_model)
         ke_batch[aa]=ke
     return qg_model.k1d_plot,ke_batch
-    
