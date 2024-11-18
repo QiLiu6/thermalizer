@@ -36,6 +36,34 @@ def get_ke_qg(pv,ave=True,qg_model=None):
 
     
     if ave:
-        return kespec[0]*qg_model.delta+kespec[1]*(1-qg_model.delta)
+        return qg_model.k1d_plot,kespec[0]*qg_model.delta+kespec[1]*(1-qg_model.delta)
     else:
-        return kespec
+        return qg_model.k1d_plot,kespec
+
+def get_ke_batch(pv_batch,normed=True,qg_model=None):
+    """ For a batch of QG fields, get a batch of the averaged KE
+        pv_batch:   batch of qg fields with shape [batch_idx, level, nx, ny]
+        normed:     are these in normalised or physical units?
+        qg_model:   Can pass a torch_qg model used to calculate the KE
+                    to save a bit of time
+                    
+                    
+        returns a tuple of (k1d_plot, ke_batch)
+        where k1d_plot is the wavenumber bins and ke_batch
+        is a tensor of [batch_idx, len(k1d_plot)] with the KE spectra
+        in each wavenumber bin
+        
+        """
+    
+    if normed:
+        pv_batch=util.denormalize_qg(pv_batch)
+        
+    if qg_model is None:
+        qg_model=torch_model.PseudoSpectralModel(nx=64,dt=3600,dealias=True,)
+    ke_batch=np.zeros((len(pv_batch),23))
+    
+    for aa in range(len(pv_batch)):
+        _,ke=util.get_ke_qg(pv_batch[aa],qg_model=qg_model)
+        ke_batch[aa]=ke
+    return qg_model.k1d_plot,ke_batch
+    
