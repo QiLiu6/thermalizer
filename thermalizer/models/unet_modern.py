@@ -399,7 +399,6 @@ class ModernUnet(nn.Module):
         print("Model saved as %s" % save_string)
         return
 
-
 class ModernUnetRegressor(ModernUnet):
     """ Inherit the Modern Unet, but add a scalar output
         to perform regression, by overriding forward method """
@@ -441,6 +440,7 @@ class ModernUnetRegressor(ModernUnet):
         else:
             return x
 
+    @torch.no_grad()
     def noise_class(self, x: torch.Tensor):
         """ Forward pass with only a regressor output - skipping the conv upsampling output for the
             score field prediction  """
