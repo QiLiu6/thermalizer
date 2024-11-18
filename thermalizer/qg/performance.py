@@ -9,6 +9,108 @@ from IPython.display import HTML
 import thermalizer.kolmogorov.util as util
 from tqdm import tqdm
 
+
+####
+### Functions to run emulator and thermalize trajectories
+###
+def run_emu(ics,emu,therm=None,n_steps=1000,silent=False):
+    """ Run an emuluator on some ICs for 2 layer QG
+        ics:     initial conditions for emulator
+        emu:     torch emulator model
+        therm:   diffusion model object - pass this if we want to
+                 also classify the noise level during rollout
+        n_steps: how many emulator steps to run
+        silent:  silence tqdm progress bar (for slurm scripts) """
+    ## Set up state and diagnostic tensors
+    state_vector=torch.zeros((len(ics),n_steps,2,64,64),device="cuda")
+    ## Set ICs
+    state_vector[:,0]=ics
+    state_vector=state_vector.to("cuda")
+    noise_classes=None
+    if therm:
+        noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
+
+    with torch.no_grad(): 
+        for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
+            state_vector[:,aa]=emu(state_vector[:,aa-1])+state_vector[:,aa-1]
+            if therm:
+                preds=therm.model.noise_class(state_vector[:,aa])
+                noise_classes[:,aa]=preds.cpu()
+    enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
+    return state_vector, enstrophies, noise_classes
+
+def therm_algo_batc(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False):
+    """ Thermalization algorithm 1 - what I originally tested, passing whole batch to
+        thermalizer model:
+        ics:     initial conditions for emulator
+        emu:     torch emulator model
+        therm:   diffusion model object
+        n_steps: how many emulator steps to run
+        start:   noise level to start thermalizing
+        stop:    noise level to stop thermalizing
+        forward: Add forward diffusion noise when thermalizing
+        silent:  silence tqdm progress bar (for slurm scripts) """
+    ## Set up state and diagnostic tensors
+    state_vector=torch.zeros((len(ics),n_steps,2,64,64),device="cuda")
+    ## Set ICs
+    state_vector[:,0]=ics
+    state_vector=state_vector.to("cuda")
+    noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
+    therming_counts=torch.zeros_like(noise_classes)
+
+    with torch.no_grad(): 
+        for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
+            state_vector[:,aa]=emu(state_vector[:,aa-1]).squeeze()+state_vector[:,aa-1]
+            preds=therm.model.noise_class(state_vector[:,aa])
+            noise_classes[:,aa]=preds.cpu()
+            if max(preds)>start:
+                thermed,therming_counts[:,aa]=therm.denoise_heterogen(state_vector[:,aa],preds,stop=stop,forward_diff=forward)
+                state_vector[:,aa]=thermed.squeeze()
+    enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
+    return state_vector, enstrophies, noise_classes, therming_counts
+
+
+def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False):
+    """ Thermalization algorithm - we only thermalize elements over the
+        initialisation threshold:
+        ics:     initial conditions for emulator
+        emu:     torch emulator model
+        therm:   diffusion model object
+        n_steps: how many emulator steps to run
+        start:   noise level to start thermalizing
+        stop:    noise level to stop thermalizing
+        forward: Add forward diffusion noise when thermalizing
+        silent:  silence tqdm progress bar (for slurm scripts) """
+
+    ## Set up state and diagnostic tensors
+    state_vector=torch.zeros((len(ics),n_steps,2,64,64),device="cuda")
+    ## Set ICs
+    state_vector[:,0]=ics
+    noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
+    therming_counts=torch.zeros_like(noise_classes)
+    
+    ## Run
+    with torch.no_grad(): 
+        for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
+            ## Emulator step
+            state_vector[:,aa]=emu(state_vector[:,aa-1]).squeeze()+state_vector[:,aa-1]
+            ## Noise level check
+            preds=therm.model.noise_class(state_vector[:,aa])
+            noise_classes[:,aa]=preds.cpu() ## Store noise levels
+            ## Indices of thermalized fields
+            therm_select=preds>(start)
+            therming=state_vector[therm_select,aa]
+            ## If we have any fields over threshold, run therm
+            if len(therming)>0:
+                thermed,counts=therm.denoise_heterogen(therming,preds[therm_select],stop=stop,forward_diff=forward)
+                for bb,idx in enumerate(torch.argwhere(therm_select).flatten()):
+                    state_vector[idx,aa]=thermed[bb].squeeze()
+                    therming_counts[idx,aa]=counts[bb]
+    state_vector=state_vector.to("cpu")
+    enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
+    return state_vector, enstrophies, noise_classes, therming_counts
+
+
 class QGAnimation():
     def __init__(self,ds,emu,fps=10,nSteps=1000,skip=1,savestring=None):
         """ Animate a simulated and emulated trajectory side by side
