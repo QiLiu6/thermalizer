@@ -278,6 +278,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff,project="therm_test
             torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
         for aa,al in enumerate(algo):
             torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
+        torch.save(noise_classes_sim,config["save_string"]+"/sim_noise.pt")
 
     ss_emu,nan_emu=util.spectral_similarity(ke_ic[1],ke_emu[1])
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
