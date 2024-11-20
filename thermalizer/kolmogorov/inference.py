@@ -20,33 +20,39 @@ import time
 import wandb
 
 
-def therm_inference(identifier,start,stop,steps,forward_diff,project="therm_tests"):
-
-    #wandb.init(entity="chris-pedersen",project="therm_sweep",dir="/scratch/cp3759/thermalizer_data/wandb_data")
-
+def therm_inference(identifier,start,stop,steps,forward_diff,project="therm_tests",solo_run=False):
     config={}
     config["save_dir"]="/scratch/cp3759/thermalizer_data/test_therms"
-    config["identifier"]="sweep_test"
+    config["identifier"]=identifier
     config["save_string"]=config["save_dir"]+"/"+config["identifier"]
-    config["start"]=wandb.config.start
-    config["stop"]=wandb.config.stop
+    if solo_run:
+        config["start"]=start
+        config["stop"]=stop
+    else: 
+        ## This condition should fail if this is run as an individual trajectory
+        config["start"]=wandb.config.start
+        config["stop"]=wandb.config.stop
     config["steps"]=steps
     config["forward_diff"]=True
-    config["emulator"]="/scratch/cp3759/thermalizer_data/wandb_data/wandb/run-20240804_230341-06kgy1hz/files/model_weights.pt"
-    config["thermalizer"]="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241022_210436-180aqx69/files/model_weights.pt"
+    config["emulator"]="/scratch/cp3759/thermalizer_data/wandb_data/wandb/run-20240804_230341-06kgy1hz/files/model_weights.pt" ## Our default baseline crappy emulator
+    #config["thermalizer"]="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241105_190145-e3cgcqur/files/model_weights.pt" ## 1k step on emu set
+    config["thermalizer"]="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241022_210436-180aqx69/files/model_weights.pt" ## Original 1k step therm
 
     #save_dir=sys.argv[1]
     #start=int(sys.argv[2])
     #stop=int(sys.argv[3])
 
-    print("Saving results in directory %s" % config["save_string"])
-    os.system(f'mkdir -p {config["save_string"]}')
+    if solo_run:
+        wandb.init(entity="chris-pedersen",project=project,dir="/scratch/cp3759/thermalizer_data/wandb_data")
+        print("Saving results in directory %s" % config["save_string"])
+        os.system(f'mkdir -p {config["save_string"]}')
+
 
     print("Save path =",config["save_string"])
     print("Therm start =",config["start"])
     print("Therm stop =",config["stop"])
 
-    model_emu=misc.load_model(config["emulator"]) ## 4 step DRN, big batch, kinda shit
+    model_emu=misc.load_model(config["emulator"]) ## 4 step DRN, big batch, goes unstable
     model_emu=model_emu.to("cuda")
     model_emu=model_emu.eval()
 
@@ -267,10 +273,11 @@ def therm_inference(identifier,start,stop,steps,forward_diff,project="therm_test
     plt.close()
 
     ## Save tensors
-    for aa,em in enumerate(emu):
-        torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
-    for aa,al in enumerate(algo):
-        torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
+    if solo_run:
+        for aa,em in enumerate(emu):
+            torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
+        for aa,al in enumerate(algo):
+            torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
 
     ss_emu,nan_emu=util.spectral_similarity(ke_ic[1],ke_emu[1])
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
@@ -280,5 +287,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff,project="therm_test
     wandb.run.summary["nans emulator"]=nan_emu
     wandb.run.summary["spectral similarity thermalized"]=ss_therm
     wandb.run.summary["nans thermalized"]=nan_therm
+    wandb.run.summary["total_therm"]=algo[-1].sum()
 
     print("finished this run")
