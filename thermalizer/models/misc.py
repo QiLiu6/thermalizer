@@ -18,7 +18,19 @@ import thermalizer.models.unet as unet
 import thermalizer.models.unet_modern as munet
 import thermalizer.models.aunet as aunet
 import thermalizer.models.drn as drn
+import thermalizer.models.fno as fno
 
+### Model factory
+def model_factory(config):
+    if config["model_type"]=="ModernUnet":
+        return munet.ModernUnet(config)
+    elif config["model_type"]=="ModernUnetRegressor":
+        return munet.ModernUnetRegressor(config)
+    elif config["model_type"]=="DRN":
+        return drn.ResNet(config)
+    else:
+        print("Model type not recognised")
+        quit()
 
 """ Store some miscellaneous helper methods that are frequently used """
 
@@ -160,6 +172,8 @@ def load_model(file_string):
             model=munet.ModernUnetRegressor(model_dict["config"])
         elif model_dict["config"]["model_type"]=="DRN":
             model=drn.ResNet(model_dict["config"])
+        elif model_dict["config"]["model_type"]=="FNO":
+            model=fno.FNO(model_dict["config"])
         else:
             model=cnn.FCNN(model_dict["config"])
     except:
