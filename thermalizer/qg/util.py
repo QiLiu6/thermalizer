@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import torch_qg.model as torch_model
+import math
 
 
 def normalize_qg(pv_batch,upper_std=8.6294e-06,lower_std=1.1706e-06):
@@ -67,3 +68,28 @@ def get_ke_batch(pv_batch,normed=True,qg_model=None):
         _,ke=get_ke_qg(pv_batch[aa],qg_model=qg_model)
         ke_batch[aa]=ke
     return qg_model.k1d_plot,ke_batch
+
+def spectral_similarity(batch1,batch2):
+    """ Compare KE spectra for 2 batches of KE spectra. Assuming the first
+        has no NaNs, i.e. this is a reference batch from a simulation 
+        Returns the normalised MSE across stable samples, and the number
+        of spectra that were nan/inf.
+        NB for QG snapshots, we cut the highest 2 wavenumber bins, as these are
+        effectively 0 in the numerical model, and will dominate any errors in the
+        normalised spectral similarity score """
+
+    norm_factors=batch1.mean(axis=0)
+    nan_counter=0
+    samp_counter=0
+    running_ave=0
+    for bb in range(len(batch1)):
+        normed_batch1=batch1[bb]/norm_factors
+        normed_batch2=batch2[bb]/norm_factors
+        mse=np.sqrt((normed_batch1[:-2]-normed_batch2[:-2])**2).sum()
+        if math.isnan(mse) or math.isinf(mse):
+            nan_counter+=1
+        else:
+            running_ave+=mse
+            samp_counter+=1
+    mse_tot=running_ave/samp_counter
+    return mse_tot, nan_counter
