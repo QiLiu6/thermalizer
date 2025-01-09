@@ -43,6 +43,7 @@ class Trainer:
     """ Base trainer class """
     def __init__(self,config):
         self.config=config
+        self.training_step=0 ## Counter to keep track of number of weight updates
         
         if self.config["ddp"]:
             setup()
@@ -59,6 +60,7 @@ class Trainer:
             self.ddp=False
             self.logging=True
 
+        ## Leave these print statements for now during dev
         print("Prep data")
         self._prep_data()
         print("Prep model")
@@ -135,14 +137,12 @@ class ResidualEmulatorTrainer(Trainer):
         self.val_loss_check=100
 
     def training_loop(self):
-        """ Training loop for residual emulator """
+        """ Training loop for residual emulator. We push loss to wandb
+            after each batch/weight update """
+
         self.model.train()
-        
-        nsamp=0
-        epoch_loss=0
         for x_data in self.train_loader:
             x_data=x_data.to(self.gpu_id)
-            nsamp+=x_data.shape[0]
             self.optimizer.zero_grad()
             loss=0
             if self.config["input_channels"]==1:
@@ -157,16 +157,16 @@ class ResidualEmulatorTrainer(Trainer):
                 loss+=loss_dt
             loss.backward()
             self.optimizer.step()
-            epoch_loss+=loss.item()
-        if self.logging:
-            log_dic={}
-            log_dic["train_loss"]=epoch_loss/nsamp ## Average over full epoch
-            log_dic["epoch"]=self.epoch
-            wandb.log(log_dic)
+            if self.logging:
+                log_dic={}
+                log_dic["train_loss"]=loss.item()
+                log_dic["training_step"]=self.training_step
+                wandb.log(log_dic)
+            self.training_step+=1
         return loss
 
     def valid_loop(self):
-        """ Training loop for residual emulator """
+        """ Training loop for residual emulator. Aggregate loss over validation set for wandb update """
         log_dic={}
         self.model.eval()
         epoch_loss=0
@@ -186,7 +186,7 @@ class ResidualEmulatorTrainer(Trainer):
                     x_dt=self.model(x_t)
                     loss_dt=self.criterion(x_dt,x_data[:,aa+1]-x_data[:,aa,:])
                     loss+=loss_dt
-                epoch_loss+=loss.detach()
+                epoch_loss+=loss.detach()*x_data.shape[0]
         epoch_loss/=nsamp ## Average over full epoch
         ## Now we want to allreduce loss over all processes
         if self.ddp:
@@ -198,7 +198,7 @@ class ResidualEmulatorTrainer(Trainer):
         if self.logging:
             log_dic={}
             log_dic["valid_loss"]=self.val_loss ## Average over full epoch
-            log_dic["epoch"]=self.epoch
+            log_dic["training_step"]=self.training_step
             wandb.log(log_dic)
         return loss
 
