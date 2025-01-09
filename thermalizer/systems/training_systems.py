@@ -207,6 +207,9 @@ class ResidualEmulatorTrainer(Trainer):
             1. Save last checkpoint.
             2. Overwrite lowest validation checkpoint if val loss is lower
         """
+        if self.epoch==1:
+            self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
+            
         self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
         if (self.epoch>2) and (self.val_loss<self.val_loss_check):
             print("Saving new checkpoint with improved validation loss at %s" % self.config["save_path"]+"/checkpoint_best.p")
