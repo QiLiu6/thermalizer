@@ -255,21 +255,24 @@ class ResidualEmulatorTrainer(Trainer):
         return
 
     def performance(self):
+        if self.ddp:
+            self.model=self.model.module
+
         ## Load test data
         with open("/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/test40.p", 'rb') as fp:
             test_suite = pickle.load(fp)
 
         ## Make sure train and test increments are the same
-        assert test_suite["increment"]==config["increment"]
+        assert test_suite["increment"]==self.config["increment"]
 
 
-        fig_ens,fig_field=performance.long_run_figures(system.network,test_suite["data"][:,0,:,:].to("cuda")/model.config["field_std"])
+        fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"])
         wandb.log({"Long Ens": wandb.Image(fig_ens)})
         wandb.log({"Long field": wandb.Image(fig_field)})
         plt.close()
 
         ## Run rollout against test sims, plot MSE
-        emu_rollout=performance.EmulatorRollout(test_suite["data"],system.network)
+        emu_rollout=performance.EmulatorRollout(test_suite["data"],self.model)
         emu_rollout._evolve()
         fig_mse=plt.figure(figsize=(14,5))
         plt.suptitle("MSE wrt. true trajectory, emu step=%.2f" % test_suite["increment"])
@@ -334,10 +337,10 @@ class ResidualEmulatorTrainer(Trainer):
         wandb.log({"Enstrophy": wandb.Image(ens_fig)})
 
         ## Run and save animation
-        steps=10000
-        system.network.to("cpu")
+        steps=1000
+        self.model.to("cpu")
         emu_rollout.test_suite[0]=emu_rollout.test_suite[0].to("cpu")
-        anim=performance.KolmogorovAnimation(emu_rollout.test_suite[0],system.network,fps=90,nSteps=steps,savestring=config["save_path"]+"/anim")
+        anim=performance.KolmogorovAnimation(emu_rollout.test_suite[0],self.model,fps=90,nSteps=steps,savestring=self.config["save_path"]+"/anim")
         anim.animate()
 
         ## Metrics figure
