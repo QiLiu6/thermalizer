@@ -15,18 +15,6 @@ import thermalizer.models.misc as misc
 import thermalizer.models.diffusion as diffusion
 import thermalizer.kolmogorov.performance as performance
 
-"""
-Things to check:
-1. Are we uploading model weights, dataset sizes correctly
-2. Are the train, valid datasets sized properly
-3. Is the checkpointing working properly
-
-Once these are established, test scaling of runs as we go to more GPU
-
-Then start 'production' jobs for big DRN, MUnet
-
-"""
-
 
 def setup():
     """Sets up the process group for distributed training.
