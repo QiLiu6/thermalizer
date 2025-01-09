@@ -13,6 +13,7 @@ import torch.distributed as dist
 import thermalizer.dataset.datasets as datasets
 import thermalizer.models.misc as misc
 import thermalizer.models.diffusion as diffusion
+import thermalizer.kolmogorov.performance as performance
 
 """
 Things to check:
@@ -48,6 +49,7 @@ class Trainer:
             self.gpu_id=int(os.environ["LOCAL_RANK"])
             self.ddp=True
             self.world_size=dist.get_world_size()
+            self.config["world_size"]=self.world_size
             if self.gpu_id==0:
                 self.logging=True
             else:
@@ -57,8 +59,11 @@ class Trainer:
             self.ddp=False
             self.logging=True
 
+        print("Prep data")
         self._prep_data()
+        print("Prep model")
         self._prep_model()
+        print("Prep optimizer")
         self._prep_optimizer()
         if self.logging:
             self.init_wandb()
@@ -243,7 +248,142 @@ class ResidualEmulatorTrainer(Trainer):
         if self.ddp:
             cleanup()
         print("DONE on rank %d" % self.gpu_id)
+
+        if self.logging:
+            ## Update model with best checkpoint
+            self.load_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
+
+            ## Run performance
+            #self.performance()
         return
+
+    def performance(self):
+        ## Load test data
+        with open("/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/test40.p", 'rb') as fp:
+            test_suite = pickle.load(fp)
+
+        ## Make sure train and test increments are the same
+        assert test_suite["increment"]==config["increment"]
+
+
+        fig_ens,fig_field=performance.long_run_figures(system.network,test_suite["data"][:,0,:,:].to("cuda")/model.config["field_std"])
+        wandb.log({"Long Ens": wandb.Image(fig_ens)})
+        wandb.log({"Long field": wandb.Image(fig_field)})
+        plt.close()
+
+        ## Run rollout against test sims, plot MSE
+        emu_rollout=performance.EmulatorRollout(test_suite["data"],system.network)
+        emu_rollout._evolve()
+        fig_mse=plt.figure(figsize=(14,5))
+        plt.suptitle("MSE wrt. true trajectory, emu step=%.2f" % test_suite["increment"])
+        plt.subplot(1,2,1)
+        plt.plot(emu_rollout.mse_emu[0],color="blue",alpha=0.1,label="Emulator")
+        plt.subplot(1,2,2)
+        plt.loglog(emu_rollout.mse_emu[0],color="blue",alpha=0.1,label="Emulator")
+        for aa in range(1,len(emu_rollout.mse_auto)):
+            plt.subplot(1,2,1)
+            plt.plot(emu_rollout.mse_emu[aa],color="blue",alpha=0.1)
+            plt.subplot(1,2,2)
+            plt.loglog(emu_rollout.mse_emu[aa],color="blue",alpha=0.1)
+        plt.subplot(1,2,1)
+        plt.yscale("log")
+        plt.ylim(1e-3,1e5)
+        plt.legend()
+        plt.ylabel("MSE")
+        plt.xlabel("# of steps")
+        plt.subplot(1,2,2)
+        plt.ylim(1e-3,1e5)
+        plt.xlabel("# of steps")
+        wandb.log({"Rollout MSE": wandb.Image(fig_mse)})
+        plt.close()
+
+        ## Plot random samples
+        samps=6
+        indices=np.random.randint(0,len(emu_rollout.test_suite),size=samps)
+        time_snaps=np.random.randint(0,len(emu_rollout.test_suite[0]),size=samps)
+        fig_samps=plt.figure(figsize=(20,6))
+        plt.suptitle("Sim (top) and emu (bottom) at random time samples")
+        for aa in range(samps):
+            plt.subplot(2,samps,aa+1)
+            plt.title("emu step # %d" % time_snaps[aa])
+            plt.imshow(emu_rollout.test_suite[indices[aa],time_snaps[aa]],cmap=sns.cm.icefire,interpolation='none')
+            plt.colorbar()
+
+            plt.subplot(2,samps,aa+1+samps)
+            plt.imshow(emu_rollout.emu[indices[aa],time_snaps[aa]],cmap=sns.cm.icefire,interpolation='none')
+            plt.colorbar()
+        plt.tight_layout()
+        wandb.log({"Random samples": wandb.Image(fig_samps)})
+        plt.close()
+
+        ## Enstrophy animation, along true trajectory
+        ens_fig=plt.figure(figsize=(12,5))
+        plt.suptitle("Enstrophy over time")
+        for aa in range(len(emu_rollout.test_suite)):
+            plt.subplot(1,2,1)
+            ens_sim=torch.sum(torch.abs(emu_rollout.test_suite[aa])**2,axis=(-1,-2))
+            ens_emu=torch.sum(torch.abs(emu_rollout.emu[aa])**2,axis=(-1,-2))
+            plt.plot(ens_sim,color="blue",alpha=0.2)
+            plt.plot(ens_emu,color="red",alpha=0.2)
+            plt.xlabel("Emulator passes")
+            plt.ylim(0,15000)
+            
+            plt.subplot(1,2,2)
+            plt.plot(ens_sim,color="blue",alpha=0.2)
+            plt.plot(ens_emu,color="red",alpha=0.2)
+            plt.xscale("log")
+            plt.xlabel("Emulator passes")
+            plt.ylim(0,15000)
+        wandb.log({"Enstrophy": wandb.Image(ens_fig)})
+
+        ## Run and save animation
+        steps=10000
+        system.network.to("cpu")
+        emu_rollout.test_suite[0]=emu_rollout.test_suite[0].to("cpu")
+        anim=performance.KolmogorovAnimation(emu_rollout.test_suite[0],system.network,fps=90,nSteps=steps,savestring=config["save_path"]+"/anim")
+        anim.animate()
+
+        ## Metrics figure
+        fig_metrics=plt.figure(figsize=(14,13))
+        plt.subplot(3,3,1)
+        plt.title("MSE")
+        plt.loglog(anim.mse)
+        plt.xlabel("# passes")
+
+        plt.subplot(3,3,2)
+        plt.title("Correlation")
+        plt.plot(anim.correlation,label="Corr(sim, emu)")
+        plt.plot(anim.autocorrelation,label="Sim Corr(t0,t)")
+        plt.xlabel("# passes")
+        plt.legend()
+
+        plt.subplot(3,3,3)
+        plt.title("KE spectra after %d timesteps (normalised)" % steps)
+        k1d,ke=util.get_ke(emu_rollout.test_suite[0][-1],anim.grid)
+        plt.loglog(k1d,ke,label="Simulation")
+        k1d,ke=util.get_ke(anim.pred,anim.grid)
+        plt.loglog(k1d,ke,label="Emulator")
+        plt.xlabel("wavenumber")
+        plt.legend()
+
+        plt.subplot(3,3,4)
+        plt.title("Sim")
+        plt.imshow(emu_rollout.test_suite[0][-1],cmap=sns.cm.icefire,interpolation='none')
+        plt.colorbar()
+
+        plt.subplot(3,3,5)
+        plt.title("Emulated")
+        plt.imshow(anim.pred,cmap=sns.cm.icefire,interpolation='none')
+        plt.colorbar()
+
+        plt.subplot(3,3,6)
+        plt.title("Residuals")
+        plt.imshow(emu_rollout.test_suite[0][-1]-anim.pred,cmap=sns.cm.icefire,interpolation='none')
+        plt.colorbar()
+
+        wandb.log({"Metrics": wandb.Image(fig_metrics)})
+        plt.close()
+        wandb.finish()
 
 
 class DDPMClassifierTrainer(Trainer):
