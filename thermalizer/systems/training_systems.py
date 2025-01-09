@@ -209,7 +209,7 @@ class ResidualEmulatorTrainer(Trainer):
         """
         if self.epoch==1:
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
-            
+
         self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
         if (self.epoch>2) and (self.val_loss<self.val_loss_check):
             print("Saving new checkpoint with improved validation loss at %s" % self.config["save_path"]+"/checkpoint_best.p")
@@ -218,9 +218,15 @@ class ResidualEmulatorTrainer(Trainer):
         
     def save_checkpoint(self, checkpoint_string):
         """ Checkpoint model and optimizer """
+
+        if self.ddp:
+            state_dict_buffer=self.model.module.state_dict()
+        else:
+            state_dict_buffer=self.model.state_dict()
+
         save_dict={
                     'epoch': self.epoch,
-                    'state_dict': self.model.state_dict(),
+                    'state_dict': state_dict_buffer,
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'val_loss': self.val_loss,
                     'config':self.config,
@@ -250,7 +256,7 @@ class ResidualEmulatorTrainer(Trainer):
                 self.checkpointing()
         if self.ddp:
             cleanup()
-        print("DONE on rank %d" % self.gpu_id)
+        print("DONE on rank", self.gpu_id)
 
         if self.logging:
             ## Update model with best checkpoint
@@ -319,7 +325,7 @@ class ResidualEmulatorTrainer(Trainer):
         wandb.log({"Random samples": wandb.Image(fig_samps)})
         plt.close()
 
-        ## Enstrophy animation, along true trajectory
+        ## Enstrophy figure, along true trajectory
         ens_fig=plt.figure(figsize=(12,5))
         plt.suptitle("Enstrophy over time")
         for aa in range(len(emu_rollout.test_suite)):
@@ -439,5 +445,5 @@ class DDPMClassifierTrainer(Trainer):
             #valid_loop(model, valid_loader)
         if self.ddp:
             cleanup()
-        print("DONE on rank %d" % self.gpu_id)
+        print("DONE on rank", self.gpu_id)
         return
