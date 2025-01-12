@@ -161,7 +161,7 @@ class EmulatorRollout():
 
     @torch.no_grad()
     def _evolve(self):
-        for aa in tqdm(range(1,len(self.test_suite[1]))):
+        for aa in range(1,len(self.test_suite[1])):
             ## Step fields forward
             emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1).to(self.device)
             preds=self.model_emu(emu_unsq)
@@ -432,10 +432,11 @@ class KolmogorovAnimation():
 
         x=self.model(x)
         
-        if self.normalise==True:
-            x=x-torch.mean(x)
+        with torch.no_grad():
+            if self.normalise==True:
+                x=x-torch.mean(x)
                     
-        self.pred=(self.pred+x.squeeze()).detach()
+        self.pred=(self.pred+x.squeeze()).cpu()
         
         self.correlation.append(pearsonr(self.pred.flatten(),self.ds[self.i].numpy().flatten())[0])
         self.autocorrelation.append(pearsonr(self.ds[0].numpy().flatten(),self.ds[self.i].numpy().flatten())[0])
