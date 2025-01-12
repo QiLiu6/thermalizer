@@ -31,6 +31,7 @@ class Trainer:
     """ Base trainer class """
     def __init__(self,config):
         self.config=config
+        self.epoch=1 ## Initialise at first epoch
         self.training_step=0 ## Counter to keep track of number of weight updates
         
         if self.config["ddp"]:
@@ -234,7 +235,7 @@ class ResidualEmulatorTrainer(Trainer):
         return
 
     def run(self):
-        for epoch in range(1,self.config["optimization"]["epochs"]+1):
+        for epoch in range(self.epoch,self.config["optimization"]["epochs"]+1):
             self.epoch=epoch
             if self.ddp:
                 self.train_loader.sampler.set_epoch(epoch)
@@ -266,7 +267,7 @@ class ResidualEmulatorTrainer(Trainer):
         assert test_suite["increment"]==self.config["increment"]
 
 
-        fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"])
+        fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"],steps=int(1e5))
         wandb.log({"Long Ens": wandb.Image(fig_ens)})
         wandb.log({"Long field": wandb.Image(fig_field)})
         plt.close()
@@ -335,55 +336,6 @@ class ResidualEmulatorTrainer(Trainer):
             plt.xlabel("Emulator passes")
             plt.ylim(0,15000)
         wandb.log({"Enstrophy": wandb.Image(ens_fig)})
-
-        ## Run and save animation
-        steps=1000
-        self.model.to("cpu")
-        emu_rollout.test_suite[0]=emu_rollout.test_suite[0].to("cpu")
-        anim=performance.KolmogorovAnimation(emu_rollout.test_suite[0],self.model,fps=90,nSteps=steps,savestring=self.config["save_path"]+"/anim")
-        anim.animate()
-
-        ## Metrics figure
-        fig_metrics=plt.figure(figsize=(14,13))
-        plt.subplot(3,3,1)
-        plt.title("MSE")
-        plt.loglog(anim.mse)
-        plt.xlabel("# passes")
-
-        plt.subplot(3,3,2)
-        plt.title("Correlation")
-        plt.plot(anim.correlation,label="Corr(sim, emu)")
-        plt.plot(anim.autocorrelation,label="Sim Corr(t0,t)")
-        plt.xlabel("# passes")
-        plt.legend()
-
-        plt.subplot(3,3,3)
-        plt.title("KE spectra after %d timesteps (normalised)" % steps)
-        k1d,ke=util.get_ke(emu_rollout.test_suite[0][-1],anim.grid)
-        plt.loglog(k1d,ke,label="Simulation")
-        k1d,ke=util.get_ke(anim.pred,anim.grid)
-        plt.loglog(k1d,ke,label="Emulator")
-        plt.xlabel("wavenumber")
-        plt.legend()
-
-        plt.subplot(3,3,4)
-        plt.title("Sim")
-        plt.imshow(emu_rollout.test_suite[0][-1],cmap=sns.cm.icefire,interpolation='none')
-        plt.colorbar()
-
-        plt.subplot(3,3,5)
-        plt.title("Emulated")
-        plt.imshow(anim.pred,cmap=sns.cm.icefire,interpolation='none')
-        plt.colorbar()
-
-        plt.subplot(3,3,6)
-        plt.title("Residuals")
-        plt.imshow(emu_rollout.test_suite[0][-1]-anim.pred,cmap=sns.cm.icefire,interpolation='none')
-        plt.colorbar()
-
-        wandb.log({"Metrics": wandb.Image(fig_metrics)})
-        plt.close()
-        wandb.finish()
 
 
 class DDPMClassifierTrainer(Trainer):
