@@ -1,6 +1,7 @@
 import os
 import pickle
 import wandb
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,6 +27,9 @@ def cleanup():
     """Cleans up the process group."""
     dist.destroy_process_group()
 
+#def trainer_from_checkpoint(wandb_dir):
+#    return trainer
+
 
 class Trainer:
     """ Base trainer class """
@@ -33,6 +37,7 @@ class Trainer:
         self.config=config
         self.epoch=1 ## Initialise at first epoch
         self.training_step=0 ## Counter to keep track of number of weight updates
+        self.wandb_init=False ## Bool to track whether or not wandb run has been initialised
         
         if self.config["ddp"]:
             setup()
@@ -56,11 +61,6 @@ class Trainer:
         self._prep_model()
         print("Prep optimizer")
         self._prep_optimizer()
-        if self.logging:
-            self.init_wandb()
-            ## Sync all configs
-            wandb.config=self.config
-            self.model.config=self.config
 
     def init_wandb(self):
         ## Set up wandb stuff
@@ -68,6 +68,13 @@ class Trainer:
                         dir="/scratch/cp3759/thermalizer_data/wandb_data",config=self.config)
         self.config["save_path"]=wandb.run.dir
         self.config["wandb_url"]=wandb.run.get_url()
+        self.wandb_init=True 
+        ## Sync all configs
+        wandb.config.update(self.config)
+        self.model.config=self.config
+
+    def load_from_wandb(self,wandb_dir):
+        raise NotImplementedError("WIP")
 
     def _prep_data(self):
         train_data,valid_data,config=datasets.parse_data_file(self.config)
@@ -200,7 +207,7 @@ class ResidualEmulatorTrainer(Trainer):
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
 
         self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
-        if (self.epoch>2) and (self.val_loss<self.val_loss_check):
+        if (self.epoch>1) and (self.val_loss<self.val_loss_check):
             print("Saving new checkpoint with improved validation loss at %s" % self.config["save_path"]+"/checkpoint_best.p")
             self.val_loss_check=self.val_loss ## Update checkpointed validation loss
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
@@ -235,6 +242,9 @@ class ResidualEmulatorTrainer(Trainer):
         return
 
     def run(self):
+        if self.logging and self.wandb_init==False:
+            self.init_wandb()
+
         for epoch in range(self.epoch,self.config["optimization"]["epochs"]+1):
             self.epoch=epoch
             if self.ddp:
