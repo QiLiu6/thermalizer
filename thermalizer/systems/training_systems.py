@@ -255,11 +255,16 @@ class ResidualEmulatorTrainer(Trainer):
 
         return
 
-    def run(self):
+    def run(self,epochs=None):
         if self.logging and self.wandb_init==False:
             self.init_wandb()
 
-        for epoch in range(self.epoch,self.config["optimization"]["epochs"]+1):
+        if epochs:
+            max_epochs=epochs
+        else:
+            max_epochs=self.config["optimization"]["epochs"]
+
+        for epoch in range(self.epoch,max_epochs+1):
             self.epoch=epoch
             if self.ddp:
                 self.train_loader.sampler.set_epoch(epoch)
