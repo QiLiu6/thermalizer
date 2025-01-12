@@ -1,7 +1,9 @@
 import os
 import pickle
 import wandb
+import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -84,7 +86,14 @@ class Trainer:
         return
 
     def _prep_data(self):
-        train_data,valid_data,config=datasets.parse_data_file(self.config)
+        if self.config["PDE"]=="Kolmogorov":
+            train_data,valid_data,config=datasets.parse_data_file(self.config)
+        elif self.config["PDE"]=="QG":
+            train_data,valid_data,config=datasets.parse_data_file_qg(self.config)
+        else:
+            print("Need to know what PDE system we are working with")
+            quit()
+
         ds_train=datasets.FluidDataset(train_data)
         ds_valid=datasets.FluidDataset(valid_data)
         self.config=config ## Update config dict
@@ -295,11 +304,12 @@ class ResidualEmulatorTrainer(Trainer):
         ## Make sure train and test increments are the same
         assert test_suite["increment"]==self.config["increment"]
 
-
+        """
         fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"],steps=int(1e5))
         wandb.log({"Long Ens": wandb.Image(fig_ens)})
         wandb.log({"Long field": wandb.Image(fig_field)})
         plt.close()
+        """
 
         ## Run rollout against test sims, plot MSE
         emu_rollout=performance.EmulatorRollout(test_suite["data"],self.model)
