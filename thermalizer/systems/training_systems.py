@@ -27,9 +27,12 @@ def cleanup():
     """Cleans up the process group."""
     dist.destroy_process_group()
 
-#def trainer_from_checkpoint(wandb_dir):
-#    return trainer
-
+def trainer_from_checkpoint(checkpoint_string):
+    with open(checkpoint_string, 'rb') as fp:
+        model_dict = pickle.load(fp)
+    trainer=ResidualEmulatorTrainer(model_dict["config"])
+    trainer.load_checkpoint(checkpoint_string)
+    return trainer
 
 class Trainer:
     """ Base trainer class """
@@ -73,8 +76,12 @@ class Trainer:
         wandb.config.update(self.config)
         self.model.config=self.config
 
-    def load_from_wandb(self,wandb_dir):
-        raise NotImplementedError("WIP")
+    def resume_wandb(self):
+        """ Resume a wandb run from the self.config wandb url. """
+        wandb.init(entity="chris-pedersen",project=self.config["project"],
+                            id=self.config["wandb_url"][-8:], resume="must")
+        self.wandb_init=True
+        return
 
     def _prep_data(self):
         train_data,valid_data,config=datasets.parse_data_file(self.config)
@@ -222,6 +229,7 @@ class ResidualEmulatorTrainer(Trainer):
 
         save_dict={
                     'epoch': self.epoch,
+                    'training_step': self.training_step,
                     'state_dict': state_dict_buffer,
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'val_loss': self.val_loss,
@@ -237,8 +245,14 @@ class ResidualEmulatorTrainer(Trainer):
             model_dict = pickle.load(fp)
         assert model_dict["config"]==self.config, "Configs not the same"
         self.model=misc.load_model(file_string).to(self.gpu_id)
+        self.epoch=model_dict["epoch"]
+        self.training_step=model_dict["training_step"]
         self._prep_optimizer()
         self.optimizer.load_state_dict(model_dict['optimizer_state_dict'])
+
+        if self.wandb_init==False:
+            self.resume_wandb()
+
         return
 
     def run(self):
