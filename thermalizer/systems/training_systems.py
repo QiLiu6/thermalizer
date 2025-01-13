@@ -147,6 +147,10 @@ class ResidualEmulatorTrainer(Trainer):
         super().__init__(config)
         self.val_loss=0
         self.val_loss_check=100
+        self.n_rollout=1
+
+    def _increment_rollout(self):
+        return
 
     def training_loop(self):
         """ Training loop for residual emulator. We push loss to wandb
@@ -159,7 +163,7 @@ class ResidualEmulatorTrainer(Trainer):
             loss=0
             if self.config["input_channels"]==1:
                 x_data=x_data.unsqueeze(2)
-            for aa in range(0,x_data.shape[1]-1):
+            for aa in range(0,self.n_rollout):
                 if aa==0:
                     x_t=x_data[:,0]
                 else:
@@ -169,12 +173,18 @@ class ResidualEmulatorTrainer(Trainer):
                 loss+=loss_dt
             loss.backward()
             self.optimizer.step()
-            if self.logging:
+            if self.logging and (self.training_step%10==0):
                 log_dic={}
                 log_dic["train_loss"]=loss.item()
                 log_dic["training_step"]=self.training_step
+                log_dic["n_rollout"]=self.n_rollout
                 wandb.log(log_dic)
             self.training_step+=1
+
+            if self.training_step<4001 and (self.training_step%1000==0):
+                self.n_rollout+=1
+                assert self.n_rollout<5
+
         return loss
 
     def valid_loop(self):
@@ -190,7 +200,7 @@ class ResidualEmulatorTrainer(Trainer):
                 loss=0
                 if self.config["input_channels"]==1:
                     x_data=x_data.unsqueeze(2)
-                for aa in range(0,x_data.shape[1]-1):
+                for aa in range(0,self.n_rollout):
                     if aa==0:
                         x_t=x_data[:,0]
                     else:
@@ -211,6 +221,7 @@ class ResidualEmulatorTrainer(Trainer):
             log_dic={}
             log_dic["valid_loss"]=self.val_loss ## Average over full epoch
             log_dic["training_step"]=self.training_step
+            log_dic["n_rollout"]=self.n_rollout
             wandb.log(log_dic)
         return loss
 
@@ -258,6 +269,8 @@ class ResidualEmulatorTrainer(Trainer):
         self.training_step=model_dict["training_step"]
         self._prep_optimizer()
         self.optimizer.load_state_dict(model_dict['optimizer_state_dict'])
+
+        self.n_rollout = model_dict.get("n_rollout") if model_dict.get("n_rollout") else 4
 
         if self.wandb_init==False:
             self.resume_wandb()
