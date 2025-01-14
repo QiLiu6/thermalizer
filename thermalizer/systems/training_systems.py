@@ -149,9 +149,6 @@ class ResidualEmulatorTrainer(Trainer):
         self.val_loss_check=100
         self.n_rollout=1
 
-    def _increment_rollout(self):
-        return
-
     def training_loop(self):
         """ Training loop for residual emulator. We push loss to wandb
             after each batch/weight update """
@@ -181,9 +178,9 @@ class ResidualEmulatorTrainer(Trainer):
                 wandb.log(log_dic)
             self.training_step+=1
 
-            if self.training_step<4001 and (self.training_step%1000==0):
+            ## Check rollout scheduler
+            if (self.training_step%self.config["rollout_scheduler"]==0) and self.n_rollout<self.config["max_rollout"]:
                 self.n_rollout+=1
-                assert self.n_rollout<5
 
         return loss
 
@@ -234,10 +231,11 @@ class ResidualEmulatorTrainer(Trainer):
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
 
         self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
-        if (self.epoch>1) and (self.val_loss<self.val_loss_check):
+        if (self.epoch>1) and (self.val_loss<self.val_loss_check) and self.n_rollout==self.config["max_rollout"]:
             print("Saving new checkpoint with improved validation loss at %s" % self.config["save_path"]+"/checkpoint_best.p")
             self.val_loss_check=self.val_loss ## Update checkpointed validation loss
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
+        return
         
     def save_checkpoint(self, checkpoint_string):
         """ Checkpoint model and optimizer """
@@ -390,16 +388,19 @@ class ResidualEmulatorTrainer(Trainer):
         wandb.log({"Enstrophy": wandb.Image(ens_fig)})
 
 
-class DDPMClassifierTrainer(Trainer):
+class ThermalizerTrainer(Trainer):
     def __init__(self,config):
         super().__init__(config)
         self.lambda_c=config["regression_loss_weight"]
+        self.softmax = nn.Softmax(dim=1)
+
+        if self.config["ddp"]==True:
+            raise NotImplementedError
 
     def _prep_model(self):
-        model_unet=misc.model_factory(config).to(self.gpu_id)
-        self.model=diffusion.Diffusion(config, model=model_unet).to(self.gpu_id)
-        if self.ddp:
-            self.model = DDP(self.model,device_ids=[self.gpu_id])
+        model_unet=misc.model_factory(self.config).to(self.gpu_id)
+        self.model=diffusion.Diffusion(self.config, model=model_unet).to(self.gpu_id)
+        self.config["cnn learnable parameters"]=sum(p.numel() for p in self.model.parameters())
 
     def load_checkpoint(self,file_string):
         """ Load checkpoint from saved file """
@@ -413,7 +414,7 @@ class DDPMClassifierTrainer(Trainer):
 
     def training_loop(self):
         """ Training loop for residual emulator """
-        log_dic={}
+        self.model.train()
         for j,image in enumerate(self.train_loader):
             image=image.to(self.gpu_id)
             #image=ds_train[batch_idx]
@@ -426,19 +427,112 @@ class DDPMClassifierTrainer(Trainer):
             loss=loss_score+self.lambda_c*loss_classifier
             loss.backward()
             self.optimizer.step()
+
+            if self.logging and (self.training_step%10==0):
+                log_dic={}
+                log_dic["train_loss"]=loss.item()
+                log_dic["training_step"]=self.training_step
+                wandb.log(log_dic)
+            self.training_step+=1
         return loss
 
     def valid_loop(self):
-        raise NotImplementedError("Not yet implemented")
+        raise NotImplementedError("Do not have a validation loop for thermalizer")
 
-    def run(self):
-        for epoch in range(1,self.config["optimization"]["epochs"]+1):
-            if self.ddp:
-                self.train_loader.sampler.set_epoch(epoch)
-            self.model.train()
+    def test_classifier(self):
+        predicted_distribution=torch.zeros((self.config["timesteps"],self.config["timesteps"]))
+        valid_image=self.valid_loader.dataset[:self.config["valid_samps"]].to(self.gpu_id)
+
+        ## Classifier predictions - only do this once at the end as its slow
+        with torch.no_grad():
+            for aa in range(self.config["timesteps"]):
+                noise=torch.randn_like(valid_image).to(self.gpu_id)
+                noise_categories=(torch.ones(len(valid_image),device=self.gpu_id)*aa).to(torch.int64) ## True noise level
+                noised_imgs=self.model._forward_diffusion(valid_image,noise_categories,noise)
+                _,pred_noise_level=self.model.model(noised_imgs,True) ## Predicted noise levels
+                predicted_distribution[aa]=self.softmax(pred_noise_level).mean(axis=0).cpu()
+
+        dist_figure=plt.figure()
+        plt.imshow(predicted_distribution)
+        plt.colorbar()
+        plt.xlabel("Predicted noise level")
+        plt.ylabel("True noise level")
+        wandb.log({"Classifier predictions":wandb.Image(dist_figure)})
+        plt.close()
+        return
+
+    def test_samples(self):
+        ####### Classifier test
+        self.model.eval()
+        samples=self.model.sampling(40)
+
+        if self.config["PDE"]=="Kolmogorov":
+            samples_fig=plt.figure(figsize=(18, 9))
+            plt.suptitle("Samples after %d epochs" % self.epoch)
+            for i in range(40):
+                plt.subplot(5, 8, 1 + i)
+                plt.axis('off')
+                plt.imshow(samples[i].squeeze(0).data.cpu().numpy(),
+                        cmap=sns.cm.icefire)
+                plt.colorbar()
+            plt.tight_layout()
+            wandb.log({"Samples":wandb.Image(samples_fig)})
+            plt.close()
+            
+            hist_figure=plt.figure()
+            plt.suptitle("Sampled distribution after %d epochs" % self.epoch)
+            plt.hist(samples.flatten().cpu(),bins=1000);
+            wandb.log({"Hist":wandb.Image(hist_figure)})
+            plt.close()
+        
+        else:
+            plt.suptitle("Samples after %d epochs, upper layer" % epoch)
+            for i in range(40):
+                plt.subplot(5, 8, 1 + i)
+                plt.axis('off')
+                plt.imshow(samples[i][0].squeeze(0).data.cpu().numpy(),
+                        cmap=sns.cm.icefire)
+                plt.colorbar()
+            plt.tight_layout()
+            wandb.log({"Samples Upper":wandb.Image(samples_fig_u)})
+            plt.close()
+            
+            samples_fig_l=plt.figure(figsize=(18, 9))
+            plt.suptitle("Samples after %d epochs, upper layer" % epoch)
+            for i in range(40):
+                plt.subplot(5, 8, 1 + i)
+                plt.axis('off')
+                plt.imshow(samples[i][1].squeeze(0).data.cpu().numpy(),
+                        cmap=sns.cm.icefire)
+                plt.colorbar()
+            plt.tight_layout()
+            wandb.log({"Samples Lower":wandb.Image(samples_fig_l)})
+            plt.close()
+            
+            hist_figure=plt.figure()
+            plt.suptitle("Sampled distribution after %d epochs" % epoch)
+            plt.hist(samples[:,0].flatten().cpu(),bins=1000,alpha=0.4,label="Upper layer");
+            plt.hist(samples[:,1].flatten().cpu(),bins=1000,alpha=0.4,label="Lower layer");
+            plt.legend()
+            wandb.log({"Hist":wandb.Image(hist_figure)})
+            plt.close()
+
+    def run(self,epochs=None):
+        if self.logging and self.wandb_init==False:
+            self.init_wandb()
+            self.model.model.config=self.config ## Update Unet config too, missed in parent call
+
+        if epochs:
+            max_epochs=epochs
+        else:
+            max_epochs=self.config["optimization"]["epochs"]
+
+        for epoch in range(self.epoch,max_epochs+1):
+            self.epoch=epoch
             self.training_loop()
-            #valid_loop(model, valid_loader)
-        if self.ddp:
-            cleanup()
+            self.test_samples()
+            self.model.model.save_model()
+        self.test_classifier()
+            
         print("DONE on rank", self.gpu_id)
         return
