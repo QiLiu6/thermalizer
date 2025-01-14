@@ -114,14 +114,17 @@ def therm_algo_2(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fa
 
 class EmulatorRollout():
     """ Run a batch of emulator rollouts along test trajectories """
-    def __init__(self,test_suite,model_emu):
+    def __init__(self,test_suite,model_emu,residual=True):
         """ test_suite: torch tensor of test data with shape [batch, snapshot, Nx, Ny], where
                         snapshots are taken 10 numerical timesteps apart
             model_emu:  a trained pytorch CNN emulator of the residuals, over 10 numerical timesteps apart
+            residual:   bool to determine whether our emulator predicts the state or residuals between two
+                        timesteps
         """
         self.test_suite=test_suite
         self.test_suite/=model_emu.config["field_std"]
         self.model_emu=model_emu
+        self.residual=residual
 
         ## Set up field tensors
         self.emu=torch.zeros(self.test_suite.shape,dtype=torch.float32)
@@ -166,7 +169,10 @@ class EmulatorRollout():
             emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1).to(self.device)
             preds=self.model_emu(emu_unsq)
             means=torch.mean(preds,axis=(-1,-2))
-            self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze().cpu()
+            if self.residual:
+                self.emu[:,aa,:,:]=(preds+emu_unsq).squeeze().cpu()
+            else:
+                self.emu[:,aa,:,:]=(preds).squeeze().cpu()
 
             ## MSE metrics
             loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
