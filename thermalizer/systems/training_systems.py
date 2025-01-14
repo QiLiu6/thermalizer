@@ -143,11 +143,14 @@ class Trainer:
 
 
 class ResidualEmulatorTrainer(Trainer):
+    """ Residual residual emulator - emulates residuals
+        with loss defined on residuals at each timestep """
     def __init__(self,config):
         super().__init__(config)
         self.val_loss=0
         self.val_loss_check=100
         self.n_rollout=1
+        self.config["emulator_loss"]="ResidualResidual"
 
     def training_loop(self):
         """ Training loop for residual emulator. We push loss to wandb
@@ -158,6 +161,7 @@ class ResidualEmulatorTrainer(Trainer):
             x_data=x_data.to(self.gpu_id)
             self.optimizer.zero_grad()
             loss=0
+            state_loss=0
             if self.config["input_channels"]==1:
                 x_data=x_data.unsqueeze(2)
             for aa in range(0,self.n_rollout):
@@ -167,12 +171,15 @@ class ResidualEmulatorTrainer(Trainer):
                     x_t=x_dt+x_t
                 x_dt=self.model(x_t)
                 loss_dt=self.criterion(x_dt,x_data[:,aa+1]-x_data[:,aa,:])
+                loss_s=self.criterion(x_data[:,aa+1],x_t+x_dt)
+                state_loss+=loss_s.item() ## Don't need gradient here
                 loss+=loss_dt
             loss.backward()
             self.optimizer.step()
             if self.logging and (self.training_step%10==0):
                 log_dic={}
-                log_dic["train_loss"]=loss.item()
+                log_dic["train_loss_resid"]=loss.item()
+                log_dic["train_loss_state"]=state_loss
                 log_dic["training_step"]=self.training_step
                 log_dic["n_rollout"]=self.n_rollout
                 wandb.log(log_dic)
@@ -189,12 +196,14 @@ class ResidualEmulatorTrainer(Trainer):
         log_dic={}
         self.model.eval()
         epoch_loss=0
+        epoch_loss_state=0
         nsamp=0
         with torch.no_grad():
             for x_data in self.valid_loader:
                 x_data=x_data.to(self.gpu_id)
                 nsamp+=x_data.shape[0]
                 loss=0
+                state_loss=0
                 if self.config["input_channels"]==1:
                     x_data=x_data.unsqueeze(2)
                 for aa in range(0,self.n_rollout):
@@ -204,19 +213,26 @@ class ResidualEmulatorTrainer(Trainer):
                         x_t=x_dt+x_t
                     x_dt=self.model(x_t)
                     loss_dt=self.criterion(x_dt,x_data[:,aa+1]-x_data[:,aa,:])
+                    loss_s=self.criterion(x_data[:,aa+1],x_t+x_dt)
                     loss+=loss_dt
+                    state_loss+=loss_s
                 epoch_loss+=loss.detach()*x_data.shape[0]
+                epoch_loss_state+=state_loss.detach()*x_data.shape[0]
         epoch_loss/=nsamp ## Average over full epoch
+        epoch_loss_state/=nsamp 
         ## Now we want to allreduce loss over all processes
         if self.ddp:
             dist.all_reduce(epoch_loss, op=dist.ReduceOp.SUM)
-            ## Acerage across all processes
+            dist.all_reduce(epoch_loss_state, op=dist.ReduceOp.SUM)
+            ## Average across all processes
             self.val_loss = epoch_loss.item()/self.world_size
+            epoch_loss_state=epoch_loss_state/self.world_size
         else:
             self.val_loss = epoch_loss.item()
         if self.logging:
             log_dic={}
-            log_dic["valid_loss"]=self.val_loss ## Average over full epoch
+            log_dic["valid_loss_resid"]=self.val_loss ## Average over full epoch
+            log_dic["valid_loss_state"]=epoch_loss_state.item()
             log_dic["training_step"]=self.training_step
             log_dic["n_rollout"]=self.n_rollout
             wandb.log(log_dic)
@@ -388,6 +404,86 @@ class ResidualEmulatorTrainer(Trainer):
         wandb.log({"Enstrophy": wandb.Image(ens_fig)})
 
 
+class ResidualStateEmulatorTrainer(ResidualEmulatorTrainer):
+    """ Residual state emulator - emulates residuals
+        but with loss defined on state """
+    def __init__(self,config):
+        super().__init__(config)
+        self.config["emulator_loss"]="ResidualState"
+
+    def training_loop(self):
+        """ Override residual emulator training loop with state loss function """
+
+        self.model.train()
+        for x_data in self.train_loader:
+            x_data=x_data.to(self.gpu_id)
+            self.optimizer.zero_grad()
+            loss=0
+            if self.config["input_channels"]==1:
+                x_data=x_data.unsqueeze(2)
+            for aa in range(0,self.n_rollout):
+                if aa==0:
+                    x_t=x_data[:,0]
+                else:
+                    x_t=x_dt+x_t
+                x_dt=self.model(x_t)
+                loss_dt=self.criterion(x_dt+x_t,x_data[:,aa+1])
+                loss+=loss_dt
+            loss.backward()
+            self.optimizer.step()
+            if self.logging and (self.training_step%10==0):
+                log_dic={}
+                log_dic["train_loss_state"]=loss.item()
+                log_dic["training_step"]=self.training_step
+                log_dic["n_rollout"]=self.n_rollout
+                wandb.log(log_dic)
+            self.training_step+=1
+
+            ## Check rollout scheduler
+            if (self.training_step%self.config["rollout_scheduler"]==0) and self.n_rollout<self.config["max_rollout"]:
+                self.n_rollout+=1
+
+        return loss
+
+    def valid_loop(self):
+        """ Training loop for residual emulator. Aggregate loss over validation set for wandb update """
+        log_dic={}
+        self.model.eval()
+        epoch_loss=0
+        nsamp=0
+        with torch.no_grad():
+            for x_data in self.valid_loader:
+                x_data=x_data.to(self.gpu_id)
+                nsamp+=x_data.shape[0]
+                loss=0
+                if self.config["input_channels"]==1:
+                    x_data=x_data.unsqueeze(2)
+                for aa in range(0,self.n_rollout):
+                    if aa==0:
+                        x_t=x_data[:,0]
+                    else:
+                        x_t=x_dt+x_t
+                    x_dt=self.model(x_t)
+                    loss_dt=self.criterion(x_dt+x_t,x_data[:,aa+1])
+                    loss+=loss_dt
+                epoch_loss+=loss.detach()*x_data.shape[0]
+        epoch_loss/=nsamp ## Average over full epoch
+        ## Now we want to allreduce loss over all processes
+        if self.ddp:
+            dist.all_reduce(epoch_loss, op=dist.ReduceOp.SUM)
+            ## Acerage across all processes
+            self.val_loss = epoch_loss.item()/self.world_size
+        else:
+            self.val_loss = epoch_loss.item()
+        if self.logging:
+            log_dic={}
+            log_dic["valid_loss_state"]=self.val_loss ## Average over full epoch
+            log_dic["training_step"]=self.training_step
+            log_dic["n_rollout"]=self.n_rollout
+            wandb.log(log_dic)
+        return loss
+
+
 class ThermalizerTrainer(Trainer):
     def __init__(self,config):
         super().__init__(config)
@@ -461,6 +557,20 @@ class ThermalizerTrainer(Trainer):
         plt.close()
         return
 
+    def save_checkpoint(self, checkpoint_string):
+        """ Checkpoint model and optimizer """
+
+        save_dict={
+                    'epoch': self.epoch,
+                    'training_step': self.training_step,
+                    'state_dict': self.model.model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'config':self.config,
+                    }
+        with open(checkpoint_string, 'wb') as handle:
+            pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
     def test_samples(self):
         ####### Classifier test
         self.model.eval()
@@ -489,7 +599,8 @@ class ThermalizerTrainer(Trainer):
             plt.close()
         
         else:
-            plt.suptitle("Samples after %d epochs, upper layer" % epoch)
+            samples_fig_u=plt.figure(figsize=(18, 9))
+            plt.suptitle("Samples after %d epochs, upper layer" % self.epoch)
             for i in range(40):
                 plt.subplot(5, 8, 1 + i)
                 plt.axis('off')
@@ -501,7 +612,7 @@ class ThermalizerTrainer(Trainer):
             plt.close()
             
             samples_fig_l=plt.figure(figsize=(18, 9))
-            plt.suptitle("Samples after %d epochs, upper layer" % epoch)
+            plt.suptitle("Samples after %d epochs, upper layer" % self.epoch)
             for i in range(40):
                 plt.subplot(5, 8, 1 + i)
                 plt.axis('off')
@@ -513,7 +624,7 @@ class ThermalizerTrainer(Trainer):
             plt.close()
             
             hist_figure=plt.figure()
-            plt.suptitle("Sampled distribution after %d epochs" % epoch)
+            plt.suptitle("Sampled distribution after %d epochs" % self.epoch)
             plt.hist(samples[:,0].flatten().cpu(),bins=1000,alpha=0.4,label="Upper layer");
             plt.hist(samples[:,1].flatten().cpu(),bins=1000,alpha=0.4,label="Lower layer");
             plt.legend()
@@ -534,7 +645,7 @@ class ThermalizerTrainer(Trainer):
             self.epoch=epoch
             self.training_loop()
             self.test_samples()
-            self.model.model.save_model()
+            self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
         self.test_classifier()
             
         print("DONE on rank", self.gpu_id)
