@@ -465,6 +465,9 @@ class ThermalizerTrainer(Trainer):
         ####### Classifier test
         self.model.eval()
         samples=self.model.sampling(40)
+        if samples.isnan().any():
+            print("Samples have nans, ignoring plot routines")
+            return
 
         if self.config["PDE"]=="Kolmogorov":
             samples_fig=plt.figure(figsize=(18, 9))
