@@ -694,7 +694,7 @@ class ScoreAnimation():
         self.ax2.set_clim(-lim,lim)
         return 
 
-def long_run_figures(model,emu_run,steps=int(1e6)):
+def long_run_figures(model,emu_run,steps=int(1e6),residual=True):
     """ For a given emulator model and set of test ICs, run for `steps` iterations
         We will plot enstrophy over time, and plot the fields at the end of the rollout
         Here we are testing long term stability - on timescales longer than we can store
@@ -711,10 +711,16 @@ def long_run_figures(model,emu_run,steps=int(1e6)):
     model=model.to("cuda")
     
     enstrophies=torch.zeros((len(emu_run),steps))
-    with torch.no_grad():
-        for aa in range(steps):
-            emu_run=model(emu_run.unsqueeze(1)).squeeze()+emu_run
-            enstrophies[:,aa]=abs(emu_run**2).sum(axis=(1,2))
+    if residual==True:
+        with torch.no_grad():
+            for aa in range(steps):
+                emu_run=model(emu_run.unsqueeze(1)).squeeze()+emu_run
+                enstrophies[:,aa]=abs(emu_run**2).sum(axis=(1,2))
+    else:
+        with torch.no_grad():
+            for aa in range(steps):
+                emu_run=model(emu_run.unsqueeze(1)).squeeze()
+                enstrophies[:,aa]=abs(emu_run**2).sum(axis=(1,2))
 
     enstrophy_figure=plt.figure()
     plt.title("Enstrophy from long emulator rollout")
