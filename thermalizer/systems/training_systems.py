@@ -151,6 +151,7 @@ class ResidualEmulatorTrainer(Trainer):
         self.val_loss_check=100
         self.n_rollout=1
         self.config["emulator_loss"]="ResidualResidual"
+        self.residual=True
 
     def training_loop(self):
         """ Training loop for residual emulator. We push loss to wandb
@@ -320,7 +321,29 @@ class ResidualEmulatorTrainer(Trainer):
             #self.performance()
         return
 
+    def performance_long(self,steps=int(1e5)):
+        """ Run long run performance test - here we just run the emulator
+            for a long time, without true simulation steps to compare against
+            due to speed and memory limitations """
+
+        ## Load test data
+        with open("/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/test40.p", 'rb') as fp:
+            test_suite = pickle.load(fp)
+
+        ## Make sure train and test increments are the same
+        assert test_suite["increment"]==self.config["increment"]
+
+        fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"],steps=steps,residual=self.residual)
+        if self.logging and self.wandb_init:
+            wandb.log({"Long Ens": wandb.Image(fig_ens)})
+            wandb.log({"Long field": wandb.Image(fig_field)})
+        plt.close()
+        return 
+
+
+
     def performance(self):
+        """ Run some performance metrics """
         if self.ddp:
             self.model=self.model.module
 
@@ -331,15 +354,15 @@ class ResidualEmulatorTrainer(Trainer):
         ## Make sure train and test increments are the same
         assert test_suite["increment"]==self.config["increment"]
 
-        """
-        fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"],steps=int(1e5))
+        """ ## Commenting out while developing as it takes ages
+        fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"],steps=int(1e5),residual=self.residual))
         wandb.log({"Long Ens": wandb.Image(fig_ens)})
         wandb.log({"Long field": wandb.Image(fig_field)})
         plt.close()
         """
 
         ## Run rollout against test sims, plot MSE
-        emu_rollout=performance.EmulatorRollout(test_suite["data"],self.model)
+        emu_rollout=performance.EmulatorRollout(test_suite["data"],self.model,residual=self.residual)
         emu_rollout._evolve()
         fig_mse=plt.figure(figsize=(14,5))
         plt.suptitle("MSE wrt. true trajectory, emu step=%.2f" % test_suite["increment"])
@@ -402,6 +425,7 @@ class ResidualEmulatorTrainer(Trainer):
             plt.xlabel("Emulator passes")
             plt.ylim(0,15000)
         wandb.log({"Enstrophy": wandb.Image(ens_fig)})
+        return
 
 
 class ResidualStateEmulatorTrainer(ResidualEmulatorTrainer):
@@ -465,6 +489,84 @@ class ResidualStateEmulatorTrainer(ResidualEmulatorTrainer):
                         x_t=x_dt+x_t
                     x_dt=self.model(x_t)
                     loss_dt=self.criterion(x_dt+x_t,x_data[:,aa+1])
+                    loss+=loss_dt
+                epoch_loss+=loss.detach()*x_data.shape[0]
+        epoch_loss/=nsamp ## Average over full epoch
+        ## Now we want to allreduce loss over all processes
+        if self.ddp:
+            dist.all_reduce(epoch_loss, op=dist.ReduceOp.SUM)
+            ## Acerage across all processes
+            self.val_loss = epoch_loss.item()/self.world_size
+        else:
+            self.val_loss = epoch_loss.item()
+        if self.logging:
+            log_dic={}
+            log_dic["valid_loss_state"]=self.val_loss ## Average over full epoch
+            log_dic["training_step"]=self.training_step
+            log_dic["n_rollout"]=self.n_rollout
+            wandb.log(log_dic)
+        return loss
+
+
+class StateEmulatorTrainer(ResidualEmulatorTrainer):
+    """ Residual state emulator - emulates residuals
+        but with loss defined on state """
+    def __init__(self,config):
+        super().__init__(config)
+        self.config["emulator_loss"]="ResidualState"
+        self.residual=False ## Bool to pass to performance modules
+
+    def training_loop(self):
+        """ Training loop for residual emulator. We push loss to wandb
+            after each batch/weight update """
+
+        self.model.train()
+        for x_data in self.train_loader:
+            x_data=x_data.to(self.gpu_id)
+            self.optimizer.zero_grad()
+            loss=0
+            if self.config["input_channels"]==1:
+                x_data=x_data.unsqueeze(2)
+            for aa in range(0,self.n_rollout):
+                if aa==0:
+                    x_t=x_data[:,0]
+                x_t=self.model(x_t)
+                loss_dt=self.criterion(x_t,x_data[:,aa+1])
+                loss+=loss_dt
+            loss.backward()
+            self.optimizer.step()
+            if self.logging and (self.training_step%10==0):
+                log_dic={}
+                log_dic["train_loss_state"]=loss.item()
+                log_dic["training_step"]=self.training_step
+                log_dic["n_rollout"]=self.n_rollout
+                wandb.log(log_dic)
+            self.training_step+=1
+
+            ## Check rollout scheduler
+            if (self.training_step%self.config["rollout_scheduler"]==0) and self.n_rollout<self.config["max_rollout"]:
+                self.n_rollout+=1
+
+        return loss
+
+    def valid_loop(self):
+        """ Training loop for residual emulator. Aggregate loss over validation set for wandb update """
+        log_dic={}
+        self.model.eval()
+        epoch_loss=0
+        nsamp=0
+        with torch.no_grad():
+            for x_data in self.valid_loader:
+                x_data=x_data.to(self.gpu_id)
+                nsamp+=x_data.shape[0]
+                loss=0
+                if self.config["input_channels"]==1:
+                    x_data=x_data.unsqueeze(2)
+                for aa in range(0,self.n_rollout):
+                    if aa==0:
+                        x_t=x_data[:,0]
+                    x_t=self.model(x_t)
+                    loss_dt=self.criterion(x_t,x_data[:,aa+1])
                     loss+=loss_dt
                 epoch_loss+=loss.detach()*x_data.shape[0]
         epoch_loss/=nsamp ## Average over full epoch
