@@ -32,7 +32,10 @@ def cleanup():
 def trainer_from_checkpoint(checkpoint_string):
     with open(checkpoint_string, 'rb') as fp:
         model_dict = pickle.load(fp)
-    trainer=ResidualEmulatorTrainer(model_dict["config"])
+    if model_dict["config"]["model_type"]=='ModernUnetRegressor':
+        trainer=ThermalizerTrainer(model_dict["config"])
+    else:
+        trainer=ResidualEmulatorTrainer(model_dict["config"])
     trainer.load_checkpoint(checkpoint_string)
     return trainer
 
@@ -43,6 +46,8 @@ class Trainer:
         self.epoch=1 ## Initialise at first epoch
         self.training_step=0 ## Counter to keep track of number of weight updates
         self.wandb_init=False ## Bool to track whether or not wandb run has been initialised
+
+        self.gradient_clip=self.config["optimization"].get("gradient_clip")
         
         if self.config["ddp"]:
             setup()
@@ -81,7 +86,7 @@ class Trainer:
     def resume_wandb(self):
         """ Resume a wandb run from the self.config wandb url. """
         wandb.init(entity="chris-pedersen",project=self.config["project"],
-                            id=self.config["wandb_url"][-8:], resume="must")
+                            id=self.config["wandb_url"][-8:],dir="/scratch/cp3759/thermalizer_data/wandb_data", resume="must")
         self.wandb_init=True
         return
 
@@ -176,6 +181,11 @@ class ResidualEmulatorTrainer(Trainer):
                 state_loss+=loss_s.item() ## Don't need gradient here
                 loss+=loss_dt
             loss.backward()
+
+            ## Gradient clipping if its a thing
+            if self.gradient_clip:
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), clip_value=self.gradient_clip)
+
             self.optimizer.step()
             if self.logging and (self.training_step%10==0):
                 log_dic={}
@@ -339,8 +349,6 @@ class ResidualEmulatorTrainer(Trainer):
             wandb.log({"Long field": wandb.Image(fig_field)})
         plt.close()
         return 
-
-
 
     def performance(self):
         """ Run some performance metrics """
@@ -600,7 +608,7 @@ class ThermalizerTrainer(Trainer):
         self.model=diffusion.Diffusion(self.config, model=model_unet).to(self.gpu_id)
         self.config["cnn learnable parameters"]=sum(p.numel() for p in self.model.parameters())
 
-    def load_checkpoint(self,file_string):
+    def load_checkpoint(self,file_string,resume_wandb=True):
         """ Load checkpoint from saved file """
         with open(file_string, 'rb') as fp:
             model_dict = pickle.load(fp)
@@ -608,6 +616,12 @@ class ThermalizerTrainer(Trainer):
         self.model=misc.load_diffusion_model(file_string).to(self.gpu_id)
         self._prep_optimizer()
         self.optimizer.load_state_dict(model_dict['optimizer_state_dict'])
+        self.epoch=model_dict["epoch"]
+        self.training_step=model_dict["training_step"]
+
+        if self.wandb_init==False and resume_wandb:
+            self.resume_wandb()
+
         return
 
     def training_loop(self):
@@ -747,7 +761,7 @@ class ThermalizerTrainer(Trainer):
             self.epoch=epoch
             self.training_loop()
             self.test_samples()
-            self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
+            self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
         self.test_classifier()
             
         print("DONE on rank", self.gpu_id)
