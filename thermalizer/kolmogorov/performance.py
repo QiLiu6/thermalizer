@@ -171,6 +171,7 @@ class EmulatorRollout():
             means=torch.mean(preds,axis=(-1,-2))
             if self.residual:
                 self.emu[:,aa,:,:]=(preds+emu_unsq).squeeze().cpu()
+                #self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze().cpu()
             else:
                 self.emu[:,aa,:,:]=(preds).squeeze().cpu()
 
