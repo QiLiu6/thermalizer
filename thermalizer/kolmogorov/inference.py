@@ -20,7 +20,22 @@ import time
 import wandb
 
 
-def therm_inference(identifier,start,stop,steps,forward_diff,project="therm_tests",solo_run=False):
+def therm_inference(identifier,start,stop,steps,forward_diff=True,
+            emulator="/scratch/cp3759/thermalizer_data/wandb_data/wandb/run-20240804_230341-06kgy1hz/files/model_weights.pt", ## Our default baseline crappy emulator
+            thermalizer="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241022_210436-180aqx69/files/model_weights.pt",
+            project="therm_tests",solo_run=False):
+    """
+        Function to run a thermalized emulator run
+        start:          noise classifier level to start thermalizing at
+        stop:           noise classifier level to stop thermalizing at
+        steps:          Total number of emulator steps to run for
+        forward_diff:   bool to add forward diffusion noise in thermalizing process
+        emulator:       string with location of emulator model weights
+        thermalizer:    string with location of thermalizer model weights
+        project:        string to determine wandb project to uplaod figures to
+        solo_run:       bool - is this a single run, or part of a sweep? Matters for wandb setup and start/stop propagation.
+    """
+    
     config={}
     config["save_dir"]="/scratch/cp3759/thermalizer_data/test_therms"
     config["identifier"]=identifier
@@ -33,10 +48,9 @@ def therm_inference(identifier,start,stop,steps,forward_diff,project="therm_test
         config["start"]=wandb.config.start
         config["stop"]=wandb.config.stop
     config["steps"]=steps
-    config["forward_diff"]=True
-    config["emulator"]="/scratch/cp3759/thermalizer_data/wandb_data/wandb/run-20240804_230341-06kgy1hz/files/model_weights.pt" ## Our default baseline crappy emulator
-    #config["thermalizer"]="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241105_190145-e3cgcqur/files/model_weights.pt" ## 1k step on emu set
-    config["thermalizer"]="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241022_210436-180aqx69/files/model_weights.pt" ## Original 1k step therm
+    config["forward_diff"]=forward_diff
+    config["emulator"]=emulator
+    config["thermalizer"]=thermalizer ## Original 1k step therm
 
     #save_dir=sys.argv[1]
     #start=int(sys.argv[2])
