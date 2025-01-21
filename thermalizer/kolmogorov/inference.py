@@ -25,7 +25,8 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
             thermalizer="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241022_210436-180aqx69/files/model_weights.pt",
             project="therm_tests",solo_run=False):
     """
-        Function to run a thermalized emulator run
+        Function to run a thermalized emulator run. Input args are:
+        identifier:     string identifying the run
         start:          noise classifier level to start thermalizing at
         stop:           noise classifier level to stop thermalizing at
         steps:          Total number of emulator steps to run for
@@ -35,7 +36,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
         project:        string to determine wandb project to uplaod figures to
         solo_run:       bool - is this a single run, or part of a sweep? Matters for wandb setup and start/stop propagation.
     """
-    
+
     config={}
     config["save_dir"]="/scratch/cp3759/thermalizer_data/test_therms"
     config["identifier"]=identifier
@@ -288,8 +289,12 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
 
     ## Save tensors
     if solo_run:
+        ## Tensors are here: https://github.com/Chris-Pedersen/thermalizer/blob/main/thermalizer/kolmogorov/performance.py
+        ## state_vector, enstrophy, noise_class
         for aa,em in enumerate(emu):
             torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
+        ## Tensors are here: https://github.com/Chris-Pedersen/thermalizer/blob/main/thermalizer/kolmogorov/performance.py
+        ## state_vector, enstrophy, noise_class, therming_counts
         for aa,al in enumerate(algo):
             torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
         torch.save(noise_classes_sim,config["save_string"]+"/sim_noise.pt")
