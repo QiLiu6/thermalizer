@@ -62,8 +62,9 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
 
     if solo_run:
         wandb.init(entity="chris-pedersen",project=project,dir="/scratch/cp3759/thermalizer_data/wandb_data")
-        print("Saving results in directory %s" % config["save_string"])
-        os.system(f'mkdir -p {config["save_string"]}')
+        if save:
+            print("Saving results in directory %s" % config["save_string"])
+            os.system(f'mkdir -p {config["save_string"]}')
 
 
     print("Save path =",config["save_string"])
