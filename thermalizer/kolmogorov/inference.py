@@ -23,7 +23,7 @@ import wandb
 def therm_inference(identifier,start,stop,steps,forward_diff=True,
             emulator="/scratch/cp3759/thermalizer_data/wandb_data/wandb/run-20240804_230341-06kgy1hz/files/model_weights.pt", ## Our default baseline crappy emulator
             thermalizer="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241022_210436-180aqx69/files/model_weights.pt",
-            project="therm_tests",solo_run=False):
+            project="therm_tests",solo_run=False,save=False,silence=True):
     """
         Function to run a thermalized emulator trajectory.
         Input args are:
@@ -35,7 +35,9 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
             emulator:       string with location of emulator model weights
             thermalizer:    string with location of thermalizer model weights
             project:        string to determine wandb project to uplaod figures to
-            solo_run:       bool - is this a single run, or part of a sweep? Matters for wandb setup and start/stop propagation.
+            solo_run:       bool - is this a single run, or part of a sweep? Matters for wandb setup and start/stop propagation
+            save:           bool to determine whether or not to save trajectories
+            silence:        bool to determine whether or not to silence tqdm to not pollute slurm output
     """
 
     config={}
@@ -100,7 +102,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     grid=util.fourierGrid(64)
 
     ## Run emulator
-    emu=performance.run_emu(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],silent=True)
+    emu=performance.run_emu(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],silent=silence)
 
     ## Classify noise levels on tru sim just for continuity
     noise_classes_sim=torch.zeros(len(emu[0]),len(emu[0][1]))
@@ -110,7 +112,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
 
     ## Run thermalizer algorithm
     start = time.time()
-    algo=performance.therm_algo_2(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],config["start"],config["stop"],forward=config["forward_diff"],silent=True)
+    algo=performance.therm_algo_2(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],config["start"],config["stop"],forward=config["forward_diff"],silent=silence)
     end = time.time()
     algo_time=end-start
     print("Algo time =", algo_time)
@@ -289,7 +291,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     plt.close()
 
     ## Save tensors
-    if solo_run:
+    if solo_run and save:
         ## Tensors are here: https://github.com/Chris-Pedersen/thermalizer/blob/main/thermalizer/kolmogorov/performance.py
         ## state_vector, enstrophy, noise_class
         for aa,em in enumerate(emu):
@@ -311,5 +313,5 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     wandb.run.summary["total_therm"]=algo[-1].sum()
 
     print("finished this run")
-    
+
     return
