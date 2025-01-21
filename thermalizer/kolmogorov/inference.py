@@ -25,16 +25,17 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
             thermalizer="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241022_210436-180aqx69/files/model_weights.pt",
             project="therm_tests",solo_run=False):
     """
-        Function to run a thermalized emulator run. Input args are:
-        identifier:     string identifying the run
-        start:          noise classifier level to start thermalizing at
-        stop:           noise classifier level to stop thermalizing at
-        steps:          Total number of emulator steps to run for
-        forward_diff:   bool to add forward diffusion noise in thermalizing process
-        emulator:       string with location of emulator model weights
-        thermalizer:    string with location of thermalizer model weights
-        project:        string to determine wandb project to uplaod figures to
-        solo_run:       bool - is this a single run, or part of a sweep? Matters for wandb setup and start/stop propagation.
+        Function to run a thermalized emulator trajectory.
+        Input args are:
+            identifier:     string identifying the run
+            start:          noise classifier level to start thermalizing at
+            stop:           noise classifier level to stop thermalizing at
+            steps:          Total number of emulator steps to run for
+            forward_diff:   bool to add forward diffusion noise in thermalizing process
+            emulator:       string with location of emulator model weights
+            thermalizer:    string with location of thermalizer model weights
+            project:        string to determine wandb project to uplaod figures to
+            solo_run:       bool - is this a single run, or part of a sweep? Matters for wandb setup and start/stop propagation.
     """
 
     config={}
@@ -310,3 +311,5 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     wandb.run.summary["total_therm"]=algo[-1].sum()
 
     print("finished this run")
+    
+    return
