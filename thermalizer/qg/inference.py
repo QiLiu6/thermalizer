@@ -11,9 +11,23 @@ import thermalizer.qg.util as util
 import time
 import os
 
-def therm_inference_qg(identifier,start,stop,steps,forward_diff,project="therm_sweep_qg",solo_run=False):
-
-    #wandb.init(entity="chris-pedersen",project="therm_sweep",dir="/scratch/cp3759/thermalizer_data/wandb_data")
+def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermalizer,
+                                            project="therm_sweep_qg",solo_run=False,save=False,silence=True):
+    """
+        Function to run a thermalized emulator trajectory.
+        Input args are:
+            identifier:     string identifying the run
+            start:          noise classifier level to start thermalizing at
+            stop:           noise classifier level to stop thermalizing at
+            steps:          Total number of emulator steps to run for
+            forward_diff:   bool to add forward diffusion noise in thermalizing process
+            emulator:       string with location of emulator model weights
+            thermalizer:    string with location of thermalizer model weights
+            project:        string to determine wandb project to uplaod figures to
+            solo_run:       bool - is this a single run, or part of a sweep? Matters for wandb setup and start/stop propagation
+            save:           bool to determine whether or not to save trajectories
+            silence:        bool to determine whether or not to silence tqdm to not pollute slurm output
+    """
 
     config={}
     config["save_dir"]="/scratch/cp3759/thermalizer_data/test_therms"
@@ -27,11 +41,11 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,project="therm_s
         config["start"]=wandb.config.start
         config["stop"]=wandb.config.stop
     config["steps"]=steps
-    config["forward_diff"]=True
+    config["forward_diff"]=forward_diff
     config["test_suite_path"]="/scratch/cp3759/thermalizer_data/qg/test_eddy/eddy_dt5_20.pt"
 
-    config["emulator"]="/scratch/cp3759/thermalizer_data/wandb_data/wandb/run-20241029_114648-rk44rj23/files/model_weights.pt"
-    config["thermalizer"]="/scratch/cp3759/pyqg_data/wandb_runs/wandb/run-20241026_165942-p1bjxynq/files/model_weights.pt"
+    config["emulator"]=emulator
+    config["thermalizer"]=thermalizer
 
     model_emu=misc.load_model(config["emulator"])
     model_emu=model_emu.to("cuda")
@@ -43,8 +57,9 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,project="therm_s
 
     if solo_run:
         wandb.init(entity="chris-pedersen",project=project,dir="/scratch/cp3759/thermalizer_data/wandb_data")
-        print("Saving results in directory %s" % config["save_string"])
-        os.system(f'mkdir -p {config["save_string"]}')
+        if save:
+            print("Saving results in directory %s" % config["save_string"])
+            os.system(f'mkdir -p {config["save_string"]}')
 
     test_suite=torch.load(config["test_suite_path"]) ## Saved normalised?
     ## Cut test suite based on nsteps
@@ -86,7 +101,6 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,project="therm_s
     plt.tight_layout()
     wandb.log({"Ticker tape": wandb.Image(ticker)})
     plt.close()
-
 
     ## Therm steps, full counter
     indices=[1,2,3,4,5]
@@ -299,7 +313,7 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,project="therm_s
     plt.close()
 
     ## Save tensors
-    if solo_run:
+    if solo_run and save:
         for aa,em in enumerate(emu):
             torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
         for aa,al in enumerate(algo):
@@ -315,3 +329,5 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,project="therm_s
     wandb.run.summary["total_therm"]=algo[-1].sum()
     torch.cuda.empty_cache()
     print("done a run")
+
+    return
