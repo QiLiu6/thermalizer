@@ -50,7 +50,9 @@ def therm_algo_1(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fa
         start:   noise level to start thermalizing
         stop:    noise level to stop thermalizing
         forward: Add forward diffusion noise when thermalizing
-        silent:  silence tqdm progress bar (for slurm scripts) """
+        silent:  silence tqdm progress bar (for slurm scripts) 
+        
+        returns: state_vector, enstrophies, noise_classes, therming_counts"""
     ## Set up state and diagnostic tensors
     state_vector=torch.zeros((len(ics),n_steps,64,64),device="cuda")
     ## Set ICs
@@ -81,7 +83,9 @@ def therm_algo_2(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fa
         start:   noise level to start thermalizing
         stop:    noise level to stop thermalizing
         forward: Add forward diffusion noise when thermalizing
-        silent:  silence tqdm progress bar (for slurm scripts) """
+        silent:  silence tqdm progress bar (for slurm scripts)
+
+        returns: state_vector, enstrophies, noise_classes, therming_counts"""
 
     ## Set up state and diagnostic tensors
     state_vector=torch.zeros((len(ics),n_steps,64,64),device="cuda")
