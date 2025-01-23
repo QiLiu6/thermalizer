@@ -47,6 +47,7 @@ class Trainer:
         self.epoch=1 ## Initialise at first epoch
         self.training_step=0 ## Counter to keep track of number of weight updates
         self.wandb_init=False ## Bool to track whether or not wandb run has been initialised
+        self.ema=None
 
         self.gradient_clip=self.config["optimization"].get("gradient_clip")
         
@@ -611,6 +612,8 @@ class ThermalizerTrainer(Trainer):
         model_unet=misc.model_factory(self.config).to(self.gpu_id)
         self.model=diffusion.Diffusion(self.config, model=model_unet).to(self.gpu_id)
         self.config["cnn learnable parameters"]=sum(p.numel() for p in self.model.parameters())
+        if self.config.get("ema_decay"):
+            self.ema=misc.ExponentialMovingAverage(self.model,decay=self.config.get("ema_decay"))
 
     def load_checkpoint(self,file_string,resume_wandb=True):
         """ Load checkpoint from saved file """
@@ -878,7 +881,6 @@ class RefinerTrainer(training_systems.Trainer):
                     'training_step': self.training_step,
                     'state_dict': self.refiner_model.model.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
-                    'val_loss': self.val_loss,
                     'config':self.config,
                     }
         with open(checkpoint_string, 'wb') as handle:
@@ -903,4 +905,3 @@ class RefinerTrainer(training_systems.Trainer):
                 self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
         print("DONE on rank", self.gpu_id)
         return
-        
