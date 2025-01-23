@@ -22,17 +22,17 @@ import thermalizer.models.fno as fno
 
 ### Model factory
 def model_factory(config):
+    """ Function to take a config dict, and return one of our nn.Modules """
     if config["model_type"]=="ModernUnet":
         return munet.ModernUnet(config)
     elif config["model_type"]=="ModernUnetRegressor":
         return munet.ModernUnetRegressor(config)
     elif config["model_type"]=="DRN":
+
         return drn.ResNet(config)
     else:
         print("Model type not recognised")
         quit()
-
-""" Store some miscellaneous helper methods that are frequently used """
 
 ## Activation registry for resnet modules
 ACTIVATION_REGISTRY = {
@@ -43,21 +43,6 @@ ACTIVATION_REGISTRY = {
     "sigmoid": nn.Sigmoid(),
 }
 
-
-#torchvision ema implementation
-#https://github.com/pytorch/vision/blob/main/references/classification/utils.py#L159
-class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
-    """Maintains moving averages of model parameters using an exponential decay.
-    ``ema_avg = decay * avg_model_param + (1 - decay) * model_param``
-    `torch.optim.swa_utils.AveragedModel <https://pytorch.org/docs/stable/optim.html#custom-averaging-strategies>`_
-    is used to compute the EMA.
-    """
-
-    def __init__(self, model, decay, device="cpu"):
-        def ema_avg(avg_model_param, model_param, num_averaged):
-            return decay * avg_model_param + (1 - decay) * model_param
-
-        super().__init__(model, device, ema_avg, use_buffers=True)
 
 ## Noise timestep embedding
 def get_timestep_embedding(timesteps, embedding_dim: int):
@@ -210,6 +195,44 @@ def load_diffusion_model(file_string):
     diffusion_model=diffusion.Diffusion(model_dict["config"], model=model_cnn)
     return diffusion_model
 
+
+class ExponentialMovingAverage:
+    def __init__(self, model, decay=0.995):
+        self.model = model
+        self.decay = decay
+        self.shadow = {}
+        self.backup = {}
+
+    def register(self, overwrite=False):
+        if len(self.shadow) > 0 and not overwrite:
+            return
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone()
+
+    def update(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                new_average = (1.0 - self.decay) * param.data.detach() + self.decay * self.shadow[name]
+                self.shadow[name] = new_average
+
+    def apply_shadow(self):
+        if len(self.shadow) == 0:
+            print("Warning: EMA shadow is empty. Cannot apply shadow.")
+        else:
+            for name, param in self.model.named_parameters():
+                if name in self.shadow:
+                    self.backup[name] = param.data
+                    param.data = self.shadow[name]
+
+    def restore(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.backup
+                param.data = self.backup[name]
+        self.backup = {}
+        
 
 def estimate_covmat(field_tensor,nsamp=None):
     """ Estimate covariance matrix from some tensor of fields. Can either be
