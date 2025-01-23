@@ -15,20 +15,22 @@ from pdearena.rollout import cond_rollout2d
 
 from pdearena.models.registry import COND_MODEL_REGISTRY
 
-class PDERefinerChris(LightningModule):
+
+class PDERefiner(LightningModule):
+    """ Implementation of pderefiner from https://arxiv.org/abs/2308.05732
+        Here we keep their core algorithm (in self.train_step) the same.
+        However there are a few other changes - the architecture, timestep embeddings
+        and input/output variables are different.
+        """
     def __init__(
         self,
         time_history: int,
         time_future: int,
         time_gap: int,
         max_num_steps: int,
-        activation: str,
         criterion: str,
-        lr: float,
         pdeconfig: PDEDataConfig,
         model,
-        param_conditioning: Optional[str] = None,
-        padding_mode: str = "zeros",
         predict_difference: bool = False,
         difference_weight: float = 1.0,
         num_refinement_steps: int = 3,
@@ -58,6 +60,8 @@ class PDERefinerChris(LightningModule):
         # Multiplies k before passing to frequency embedding.
         self.time_multiplier = int(1000 / num_refinement_steps)
 
+        ## Some complex rollout machinery we probably don't need, since we only look at 1 previous step and 1 future step
+        ## Will leave for now but this will probably go soon
         self.val_criterions = {"mse": CustomMSELoss(), "scaledl2": ScaledLpLoss()}
         self.rollout_criterions = {"mse": torch.nn.MSELoss(reduction="none"), "corr": PearsonCorrelationScore()}
         time_resolution = self.pde.trajlen
@@ -95,14 +99,14 @@ class PDERefinerChris(LightningModule):
         loss = {k: vc(pred, y) for k, vc in self.val_criterions.items()}
         return loss, pred, y
 
-    def predict_next_solution(self, x, cond):
+    def predict_next_solution(self, x):
         y_noised = torch.randn(
             size=(x.shape[0], self.hparams.time_future, *x.shape[2:]), dtype=x.dtype, device=x.device
         )
         for k in self.scheduler.timesteps:
             time = torch.zeros(size=(x.shape[0],), dtype=x.dtype, device=x.device) + k
             x_in = torch.cat([x, y_noised], axis=1) ## y_noised is the thing being refined, conditioned on x
-            pred = self.model(x_in, time=time * self.time_multiplier, z=cond)
+            pred = self.model(x_in, t=time * self.time_multiplier)
             y_noised = self.scheduler.step(pred, k, y_noised).prev_sample
         y = y_noised
         if self.hparams.predict_difference:
@@ -322,10 +326,6 @@ class PDERefinerChris(LightningModule):
                 self.log(f"tests/time_till_corr_lower_{threshold}", (corr_timesteps > threshold).float().sum())
             for t in log_timesteps:
                 self.log(f"tests/corr_at_{t}", corr_timesteps[t])
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.lr)
-        return optimizer
 
     def on_fit_start(self):
         self.ema.register()
