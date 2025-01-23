@@ -17,6 +17,7 @@ import thermalizer.dataset.datasets as datasets
 import thermalizer.models.misc as misc
 import thermalizer.models.diffusion as diffusion
 import thermalizer.kolmogorov.performance as performance
+import thermalizer.models.refiner as refiner
 
 
 def setup():
@@ -127,6 +128,9 @@ class Trainer:
     def _prep_model(self):
         self.model=misc.model_factory(self.config).to(self.gpu_id)
         self.config["cnn learnable parameters"]=sum(p.numel() for p in self.model.parameters())
+
+        if self.config.get("ema_decay"):
+            self.ema=misc.ExponentialMovingAverage(self.model,decay=self.config.get("ema_decay"))
 
         if self.ddp:
             self.model = DDP(self.model,device_ids=[self.gpu_id])
@@ -759,10 +763,76 @@ class ThermalizerTrainer(Trainer):
 
         for epoch in range(self.epoch,max_epochs+1):
             self.epoch=epoch
+            print("Training at epoch", self.epoch)
             self.training_loop()
             self.test_samples()
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
         self.test_classifier()
             
+        print("DONE on rank", self.gpu_id)
+        return
+
+
+class RefinerTrainer(Trainer):
+    """ Trainer object for pderefiner from https://arxiv.org/abs/2308.05732 """
+    def __init__(self,config):
+        super().__init__(config)
+        self.residual=self.config["residual"]
+        ## Make sure our model has timesteps if we are doing refiner!
+        assert self.model.time_embedding, "No time embedding in Unet"
+        self._build_refiner()
+
+        if self.config["ddp"]==True:
+            raise NotImplementedError
+
+    def _build_refiner(self):
+        """ Set up pderefiner module """
+
+        ## Some clunk imported from pdearena i don't have time to trim just yet
+        from dataclasses import dataclass
+        @dataclass
+        class PDEDataConfig:
+            n_scalar_components: int
+            n_vector_components: int
+            trajlen: int
+            n_spatial_dim: int
+            
+        pdeconfig=PDEDataConfig(n_scalar_components=1,n_vector_components=0,trajlen=2,n_spatial_dim=2)
+        self.refiner_model=refiner.PDERefiner(time_history=1,time_future=1,time_gap=0,max_num_steps=10,
+                    criterion="mse",pdeconfig=pdeconfig,model=self.model)
+        return
+
+    def training_loop(self):
+        for batch in self.train_loader:
+            xx=batch[:,0].unsqueeze(1).to(self.gpu_id)
+            if self.residual:
+                yy=(batch[:,1].unsqueeze(1)-batch[:,0].unsqueeze(1)).to(self.gpu_id)
+            else:
+                yy=(batch[:,1].unsqueeze(1)).to(self.gpu_id)
+            self.optimizer.zero_grad()
+            loss,_,_=self.refiner_model.train_step((xx,yy))
+            loss.backward()
+            self.optimizer.step()
+            if self.logging and (self.training_step%10==0):
+                log_dic={}
+                log_dic["train_loss"]=loss.item()
+                log_dic["train_step"]=self.training_step
+                wandb.log(log_dic)
+            self.training_step+=1
+        return
+
+    def run(self,epochs=None):
+        """ Can run for a custom number of epochs, otherwise will run for however many is in config """
+        if self.logging and self.wandb_init==False:
+            self.init_wandb()
+        
+        if epochs:
+            max_epochs=epochs
+        else:
+            max_epochs=self.config["optimization"]["epochs"]
+
+        for epoch in range(self.epoch,max_epochs+1):
+            self.epoch=epoch
+            self.training_loop()
         print("DONE on rank", self.gpu_id)
         return
