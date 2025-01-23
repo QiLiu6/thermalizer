@@ -773,17 +773,22 @@ class ThermalizerTrainer(Trainer):
         return
 
 
-class RefinerTrainer(Trainer):
-    """ Trainer object for pderefiner from https://arxiv.org/abs/2308.05732 """
+class RefinerTrainer(training_systems.Trainer):
     def __init__(self,config):
         super().__init__(config)
         self.residual=self.config["residual"]
         ## Make sure our model has timesteps if we are doing refiner!
         assert self.model.time_embedding, "No time embedding in Unet"
         self._build_refiner()
+        self.test_criterion=torch.nn.MSELoss(reduction="none")
 
         if self.config["ddp"]==True:
             raise NotImplementedError
+        ## Set up test trajectory tensor
+        with open("/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/test40.p", 'rb') as fp:
+            test_suite = pickle.load(fp)
+        
+        self.test_trajectories=(test_suite["data"][:,:200]/self.model.config["field_std"]).to(self.gpu_id)
 
     def _build_refiner(self):
         """ Set up pderefiner module """
@@ -799,7 +804,7 @@ class RefinerTrainer(Trainer):
             
         pdeconfig=PDEDataConfig(n_scalar_components=1,n_vector_components=0,trajlen=2,n_spatial_dim=2)
         self.refiner_model=refiner.PDERefiner(time_history=1,time_future=1,time_gap=0,max_num_steps=10,
-                    criterion="mse",pdeconfig=pdeconfig,model=self.model)
+                    criterion="mse",pdeconfig=pdeconfig,model=self.model,predict_difference=self.residual)
         return
 
     def training_loop(self):
@@ -821,6 +826,65 @@ class RefinerTrainer(Trainer):
             self.training_step+=1
         return
 
+    def test_rollout(self,numsteps=None,wandb_figures=True):
+        """ Run a short rollout alongside a test trajectory """
+        xx=self.test_trajectories[:,0].unsqueeze(1)
+        losses=[]
+        
+        if numsteps:
+            trajlen=numsteps
+        else:
+            trajlen=len(self.test_trajectories[0])-1
+
+        losses=torch.zeros((self.test_trajectories.shape[0],trajlen))
+
+        ## Run short rollout
+        with torch.no_grad():
+            for aa in range(1,trajlen):
+                xx=self.refiner_model.predict_next_solution(xx)
+                losses[:,aa]=torch.mean(self.test_criterion(xx.squeeze(),self.test_trajectories[:,aa].to("cuda")),dim=(1,2))
+
+        fig_samps=plt.figure(figsize=(20,6))
+        samps=6
+        plt.suptitle("Sim (top) and emu (bottom) after %d steps, at epoch %d" % (trajlen,self.epoch))
+        for aa in range(1,samps):
+            plt.subplot(2,samps,aa+1)
+            plt.imshow(self.test_trajectories[aa,trajlen].squeeze().cpu(),cmap=sns.cm.icefire,interpolation='none')
+            plt.colorbar()
+        
+            plt.subplot(2,samps,aa+1+samps)
+            plt.imshow(xx[aa].squeeze().cpu(),cmap=sns.cm.icefire,interpolation='none')
+            plt.colorbar()
+        plt.tight_layout()
+        if wandb_figures:
+            wandb.log({"Random samples": wandb.Image(fig_samps)})
+            plt.close()
+
+        fig_losses=plt.figure()
+        plt.title("Losses along short trajectory at epoch %d" % self.epoch)
+        for aa in range(len(losses)):
+            plt.semilogy(losses[aa],color="gray",alpha=0.5)
+        plt.ylim(1e-4,1e3)
+        if wandb_figures:
+            wandb.log({"Loss samples": wandb.Image(fig_losses)})
+            plt.close()
+        return
+
+    def save_checkpoint(self, checkpoint_string):
+        """ Checkpoint model and optimizer """
+
+        save_dict={
+                    'epoch': self.epoch,
+                    'training_step': self.training_step,
+                    'state_dict': self.refiner_model.model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'val_loss': self.val_loss,
+                    'config':self.config,
+                    }
+        with open(checkpoint_string, 'wb') as handle:
+            pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
     def run(self,epochs=None):
         """ Can run for a custom number of epochs, otherwise will run for however many is in config """
         if self.logging and self.wandb_init==False:
@@ -834,5 +898,9 @@ class RefinerTrainer(Trainer):
         for epoch in range(self.epoch,max_epochs+1):
             self.epoch=epoch
             self.training_loop()
+            if self.logging:
+                self.test_rollout()
+                self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
         print("DONE on rank", self.gpu_id)
         return
+        
