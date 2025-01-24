@@ -132,6 +132,7 @@ class Trainer:
 
         if self.config.get("ema_decay"):
             self.ema=misc.ExponentialMovingAverage(self.model,decay=self.config.get("ema_decay"))
+            self.ema.register()
 
         if self.ddp:
             self.model = DDP(self.model,device_ids=[self.gpu_id])
@@ -201,9 +202,13 @@ class ResidualEmulatorTrainer(Trainer):
                 wandb.log(log_dic)
             self.training_step+=1
 
+            if self.ema:
+                self.ema.update()
+
             ## Check rollout scheduler
             if (self.training_step%self.config["rollout_scheduler"]==0) and self.n_rollout<self.config["max_rollout"]:
                 self.n_rollout+=1
+
 
         return loss
 
@@ -211,6 +216,8 @@ class ResidualEmulatorTrainer(Trainer):
         """ Training loop for residual emulator. Aggregate loss over validation set for wandb update """
         log_dic={}
         self.model.eval()
+        if self.ema:
+            self.ema.apply_shadow()
         epoch_loss=0
         epoch_loss_state=0
         nsamp=0
@@ -252,6 +259,8 @@ class ResidualEmulatorTrainer(Trainer):
             log_dic["training_step"]=self.training_step
             log_dic["n_rollout"]=self.n_rollout
             wandb.log(log_dic)
+        if self.ema:
+            self.ema.restore()
         return loss
 
     def checkpointing(self):
@@ -261,12 +270,24 @@ class ResidualEmulatorTrainer(Trainer):
         """
         if self.epoch==1:
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
+        if self.ema:
+            self.ema.apply_shadow()
+            self.save_checkpoint(self.config["save_path"]+"/checkpoint_best_ema.p")
+            self.ema.restore()
 
         self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
+        if self.ema:
+            self.ema.apply_shadow()
+            self.save_checkpoint(self.config["save_path"]+"/checkpoint_last_ema.p")
+            self.ema.restore()
         if (self.epoch>1) and (self.val_loss<self.val_loss_check) and self.n_rollout==self.config["max_rollout"]:
             print("Saving new checkpoint with improved validation loss at %s" % self.config["save_path"]+"/checkpoint_best.p")
             self.val_loss_check=self.val_loss ## Update checkpointed validation loss
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
+            if self.ema:
+                self.ema.apply_shadow()
+                self.save_checkpoint(self.config["save_path"]+"/checkpoint_best_ema.p")
+                self.ema.restore()
         return
         
     def save_checkpoint(self, checkpoint_string):
@@ -328,18 +349,15 @@ class ResidualEmulatorTrainer(Trainer):
             cleanup()
         print("DONE on rank", self.gpu_id)
 
-        if self.logging:
-            ## Update model with best checkpoint
-            self.load_checkpoint(self.config["save_path"]+"/checkpoint_best.p")
-
-            ## Run performance
-            #self.performance()
         return
 
     def performance_long(self,steps=int(1e5)):
         """ Run long run performance test - here we just run the emulator
             for a long time, without true simulation steps to compare against
             due to speed and memory limitations """
+
+        if self.ema:
+            self.ema.apply_shadow()
 
         ## Load test data
         with open("/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/test40.p", 'rb') as fp:
@@ -486,6 +504,8 @@ class ResidualStateEmulatorTrainer(ResidualEmulatorTrainer):
         """ Training loop for residual emulator. Aggregate loss over validation set for wandb update """
         log_dic={}
         self.model.eval()
+        if self.ema:
+            self.ema.apply_shadow()
         epoch_loss=0
         nsamp=0
         with torch.no_grad():
@@ -518,6 +538,9 @@ class ResidualStateEmulatorTrainer(ResidualEmulatorTrainer):
             log_dic["training_step"]=self.training_step
             log_dic["n_rollout"]=self.n_rollout
             wandb.log(log_dic)
+        if self.ema:
+            self.ema.restore()
+            
         return loss
 
 
@@ -559,6 +582,9 @@ class StateEmulatorTrainer(ResidualEmulatorTrainer):
             ## Check rollout scheduler
             if (self.training_step%self.config["rollout_scheduler"]==0) and self.n_rollout<self.config["max_rollout"]:
                 self.n_rollout+=1
+
+            if self.ema:
+                self.ema.update()
 
         return loss
 
@@ -614,6 +640,7 @@ class ThermalizerTrainer(Trainer):
         self.config["cnn learnable parameters"]=sum(p.numel() for p in self.model.parameters())
         if self.config.get("ema_decay"):
             self.ema=misc.ExponentialMovingAverage(self.model,decay=self.config.get("ema_decay"))
+            self.ema.register()
 
     def load_checkpoint(self,file_string,resume_wandb=True):
         """ Load checkpoint from saved file """
@@ -653,12 +680,18 @@ class ThermalizerTrainer(Trainer):
                 log_dic["training_step"]=self.training_step
                 wandb.log(log_dic)
             self.training_step+=1
+
+            if self.ema:
+                self.ema.update()
+
         return loss
 
     def valid_loop(self):
         raise NotImplementedError("Do not have a validation loop for thermalizer")
 
     def test_classifier(self):
+        if self.ema:
+            self.ema.apply_shadow()
         predicted_distribution=torch.zeros((self.config["timesteps"],self.config["timesteps"]))
         valid_image=self.valid_loader.dataset[:self.config["valid_samps"]].to(self.gpu_id)
 
@@ -678,6 +711,10 @@ class ThermalizerTrainer(Trainer):
         plt.ylabel("True noise level")
         wandb.log({"Classifier predictions":wandb.Image(dist_figure)})
         plt.close()
+
+        if self.ema:
+            self.ema.restore()
+
         return
 
     def save_checkpoint(self, checkpoint_string):
@@ -697,7 +734,12 @@ class ThermalizerTrainer(Trainer):
     def test_samples(self):
         ####### Classifier test
         self.model.eval()
+
+        if self.ema:
+            self.ema.apply_shadow()
+            
         samples=self.model.sampling(40)
+
         if samples.isnan().any():
             print("Samples have nans, ignoring plot routines")
             return
@@ -754,6 +796,9 @@ class ThermalizerTrainer(Trainer):
             wandb.log({"Hist":wandb.Image(hist_figure)})
             plt.close()
 
+        if self.ema:
+            self.ema.restore()
+
     def run(self,epochs=None):
         if self.logging and self.wandb_init==False:
             self.init_wandb()
@@ -770,13 +815,18 @@ class ThermalizerTrainer(Trainer):
             self.training_loop()
             self.test_samples()
             self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
+            if self.ema:
+                self.ema.apply_shadow()
+                self.save_checkpoint(self.config["save_path"]+"/checkpoint_last_ema.p")
+                self.ema.restore()
+
         self.test_classifier()
             
         print("DONE on rank", self.gpu_id)
         return
 
 
-class RefinerTrainer(training_systems.Trainer):
+class RefinerTrainer(Trainer):
     def __init__(self,config):
         super().__init__(config)
         self.residual=self.config["residual"]
@@ -827,10 +877,15 @@ class RefinerTrainer(training_systems.Trainer):
                 log_dic["train_step"]=self.training_step
                 wandb.log(log_dic)
             self.training_step+=1
+            if self.ema:
+                self.ema.update()
         return
 
     def test_rollout(self,numsteps=None,wandb_figures=True):
         """ Run a short rollout alongside a test trajectory """
+
+        if self.ema:
+            self.ema.apply_shadow()
         xx=self.test_trajectories[:,0].unsqueeze(1)
         losses=[]
         
@@ -871,6 +926,10 @@ class RefinerTrainer(training_systems.Trainer):
         if wandb_figures:
             wandb.log({"Loss samples": wandb.Image(fig_losses)})
             plt.close()
+
+        if self.ema:
+            self.ema.restore()
+        
         return
 
     def save_checkpoint(self, checkpoint_string):
@@ -903,5 +962,9 @@ class RefinerTrainer(training_systems.Trainer):
             if self.logging:
                 self.test_rollout()
                 self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
+                if self.ema:
+                    self.ema.apply_shadow()
+                    self.save_checkpoint(self.config["save_path"]+"/checkpoint_last_ema.p")
+                    self.ema.restore()
         print("DONE on rank", self.gpu_id)
         return
