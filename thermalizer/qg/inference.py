@@ -73,7 +73,7 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermal
     wandb.config.update(config)
 
 
-    emu=performance.run_emu(test_suite[:,0],model_emu,model_therm,config["steps"],silent=True)
+    emu=performance.run_emu(test_suite[:,0],model_emu,model_therm,config["steps"],silent=silence)
 
     ## Classify noise levels on tru sim just for continuity
     noise_classes_sim=torch.zeros(len(emu[0]),len(emu[0][1]))
@@ -83,7 +83,7 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermal
 
     ## Run thermalizer algorithm
     start = time.time()
-    algo=performance.therm_algo(test_suite[:,0],model_emu,model_therm,config["steps"],config["start"],config["stop"],config["forward_diff"],silent=False)
+    algo=performance.therm_algo(test_suite[:,0],model_emu,model_therm,config["steps"],config["start"],config["stop"],config["forward_diff"],silent=silence)
     end = time.time()
     algo_time=end-start
     print("Algo time =", algo_time)
