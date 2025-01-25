@@ -837,11 +837,13 @@ class RefinerTrainer(Trainer):
 
         if self.config["ddp"]==True:
             raise NotImplementedError
-        ## Set up test trajectory tensor
-        with open("/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/test40.p", 'rb') as fp:
-            test_suite = pickle.load(fp)
-        
-        self.test_trajectories=(test_suite["data"][:,:200]/self.model.config["field_std"]).to(self.gpu_id)
+        if self.config["PDE"]=="Kolmogorov":
+            ## Set up test trajectory tensor
+            with open("/scratch/cp3759/thermalizer_data/kolmogorov/reynolds10k/test40.p", 'rb') as fp:
+                test_suite = pickle.load(fp)
+            self.test_trajectories=(test_suite["data"][:,:200]/self.model.config["field_std"]).to(self.gpu_id)
+        elif self.config["PDE"]=="QG":
+            self.test_trajectories=torch.load("/scratch/cp3759/thermalizer_data/qg/test_eddy/eddy_dt5_20.pt")
 
     def _build_refiner(self):
         """ Set up pderefiner module """
@@ -856,17 +858,19 @@ class RefinerTrainer(Trainer):
             n_spatial_dim: int
             
         pdeconfig=PDEDataConfig(n_scalar_components=1,n_vector_components=0,trajlen=2,n_spatial_dim=2)
-        self.refiner_model=refiner.PDERefiner(time_history=1,time_future=1,time_gap=0,max_num_steps=10,
+        self.refiner_model=refiner.PDERefiner(time_history=1,time_future=self.config["output_channels"],time_gap=0,max_num_steps=10,
                     criterion="mse",pdeconfig=pdeconfig,model=self.model,predict_difference=self.residual)
         return
 
     def training_loop(self):
         for batch in self.train_loader:
-            xx=batch[:,0].unsqueeze(1).to(self.gpu_id)
+            xx=batch[:,0].to(self.gpu_id)
+            yy=batch[:,1].to(self.gpu_id)
+            if self.config["PDE"]=="Kolmogorov":
+                xx=xx.unsqueeze(1)
+                yy=yy.unsqueeze(1)
             if self.residual:
-                yy=(batch[:,1].unsqueeze(1)-batch[:,0].unsqueeze(1)).to(self.gpu_id)
-            else:
-                yy=(batch[:,1].unsqueeze(1)).to(self.gpu_id)
+                yy=yy-xx
             self.optimizer.zero_grad()
             loss,_,_=self.refiner_model.train_step((xx,yy))
             loss.backward()
@@ -881,7 +885,7 @@ class RefinerTrainer(Trainer):
                 self.ema.update()
         return
 
-    def test_rollout(self,numsteps=None,wandb_figures=True):
+    def test_rollout_kol(self,numsteps=None,wandb_figures=True):
         """ Run a short rollout alongside a test trajectory """
 
         if self.ema:
@@ -929,7 +933,49 @@ class RefinerTrainer(Trainer):
 
         if self.ema:
             self.ema.restore()
-        
+        return
+
+    def test_rollout_qg(self,numsteps=None,wandb_figures=True):
+        xx=self.test_trajectories[:,0].to("cuda")
+        losses=[]
+
+        if numsteps:
+            trajlen=numsteps
+        else:
+            trajlen=len(self.test_trajectories[0])-1
+
+        losses=torch.zeros((self.test_trajectories.shape[0],trajlen))
+
+        ## Run short rollout
+        with torch.no_grad():
+            for aa in range(1,trajlen):
+                xx=self.refiner_model.predict_next_solution(xx)
+                losses[:,aa]=torch.mean(self.test_criterion(xx.squeeze(),self.test_trajectories[:,aa].to("cuda")),dim=(1,2,3))
+
+        fig_samps=plt.figure(figsize=(20,6))
+        samps=6
+        plt.suptitle("Sim (top) and emu (bottom) after %d steps, at epoch %d" % (trajlen,self.epoch))
+        for aa in range(1,samps):
+            plt.subplot(2,samps,aa+1)
+            plt.imshow(self.test_trajectories[aa,trajlen,0].squeeze().cpu(),cmap=sns.cm.icefire,interpolation='none')
+            plt.colorbar()
+
+            plt.subplot(2,samps,aa+1+samps)
+            plt.imshow(xx[aa,0].squeeze().cpu(),cmap=sns.cm.icefire,interpolation='none')
+            plt.colorbar()
+        plt.tight_layout()
+        if wandb_figures:
+            wandb.log({"Random samples": wandb.Image(fig_samps)})
+            plt.close()
+
+        fig_losses=plt.figure()
+        plt.title("Losses along short trajectory at epoch %d" % self.epoch)
+        for aa in range(len(losses)):
+            plt.semilogy(losses[aa],color="gray",alpha=0.5)
+        plt.ylim(1e-4,1e3)
+        if wandb_figures:
+            wandb.log({"Loss samples": wandb.Image(fig_losses)})
+            plt.close()
         return
 
     def save_checkpoint(self, checkpoint_string):
@@ -960,7 +1006,10 @@ class RefinerTrainer(Trainer):
             self.epoch=epoch
             self.training_loop()
             if self.logging:
-                self.test_rollout()
+                if self.config["PDE"]=="Kolmogorov":
+                    self.test_rollout_kol()
+                else:
+                    self.test_rollout_qg()
                 self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
                 if self.ema:
                     self.ema.apply_shadow()
