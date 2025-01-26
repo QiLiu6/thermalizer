@@ -843,7 +843,7 @@ class RefinerTrainer(Trainer):
                 test_suite = pickle.load(fp)
             self.test_trajectories=(test_suite["data"][:,:200]/self.model.config["field_std"]).to(self.gpu_id)
         elif self.config["PDE"]=="QG":
-            self.test_trajectories=torch.load("/scratch/cp3759/thermalizer_data/qg/test_eddy/eddy_dt5_20.pt")
+            self.test_trajectories=torch.load("/scratch/cp3759/thermalizer_data/qg/test_eddy/eddy_dt5_20.pt")[:,:200]
 
     def _build_refiner(self):
         """ Set up pderefiner module """
