@@ -76,15 +76,15 @@ def therm_algo_1(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fa
 def therm_algo_2(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False,noise_limit=100):
     """ Thermalization algorithm 2 - correct algo where we only thermalize elements over the
         initialisation threshold:
-        ics:     initial conditions for emulator
-        emu:     torch emulator model
-        therm:   diffusion model object
-        n_steps: how many emulator steps to run
-        start:   noise level to start thermalizing
-        stop:    noise level to stop thermalizing
-        forward: Add forward diffusion noise when thermalizing
-        silent:  silence tqdm progress bar (for slurm scripts)
-        noise_limit: 
+        ics:         initial conditions for emulator
+        emu:         torch emulator model
+        therm:       diffusion model object
+        n_steps:     how many emulator steps to run
+        start:       noise level to start thermalizing
+        stop:        noise level to stop thermalizing
+        forward:     Add forward diffusion noise when thermalizing
+        silent:      silence tqdm progress bar (for slurm scripts)
+        noise_limit: if predicted noise level exceeds this threshold, cut the run
 
         returns: state_vector, enstrophies, noise_classes, therming_counts"""
 
@@ -112,9 +112,10 @@ def therm_algo_2(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fa
                 for bb,idx in enumerate(torch.argwhere(therm_select).flatten()):
                     state_vector[idx,aa]=thermed[bb].squeeze()
                     therming_counts[idx,aa]=counts[bb]
-            if preds.max()>noise_limit:
-                print("breaking due to noise limit")
-                break
+            if noise_limit:
+                if preds.max()>noise_limit:
+                    print("breaking due to noise limit")
+                    break
     state_vector=state_vector.to("cpu")
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
     return state_vector, enstrophies, noise_classes, therming_counts
