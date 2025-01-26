@@ -105,12 +105,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     ## Run emulator
     emu=performance.run_emu(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],silent=silence)
 
-    ## Classify noise levels on tru sim just for continuity
-    noise_classes_sim=torch.zeros(len(emu[0]),len(emu[0][1]))
-    for aa in range(len(emu[0][1])):
-        preds=model_therm.model.noise_class(test_suite["data"][:,aa].unsqueeze(1).to("cuda"))
-        noise_classes_sim[:,aa]=preds.cpu()
-
     ## Run thermalizer algorithm
     start = time.time()
     algo=performance.therm_algo_2(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],config["start"],config["stop"],forward=config["forward_diff"],silent=silence)
@@ -260,7 +254,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     for aa in range(len(emu[-1])):
         plt.plot(emu[-1][aa][:100],color="gray",alpha=0.3)
         plt.plot(algo[-2][aa][:100],color="blue",alpha=0.3)
-        plt.plot(noise_classes_sim[aa][:100],color="red",alpha=0.1)
     plt.ylim(-2,100)
     plt.axhline(config["start"],color="black")
     plt.axhline(config["stop"],color="black")
@@ -272,7 +265,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     for aa in range(len(emu[-1])):
         plt.plot(emu[-1][aa],color="gray",alpha=0.3)
         plt.plot(algo[-2][aa],color="blue",alpha=0.3)
-        plt.plot(noise_classes_sim[aa],color="red",alpha=0.1)
     plt.ylim(-2,100)
     plt.axhline(config["start"],color="black")
     plt.axhline(config["stop"],color="black")
@@ -283,7 +275,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     for aa in range(len(emu[-1])):
         plt.plot(emu[-1][aa][-100:],color="gray",alpha=0.3)
         plt.plot(algo[-2][aa][-100:],color="blue",alpha=0.3)
-        plt.plot(noise_classes_sim[aa][-100:],color="red",alpha=0.1)
     plt.ylim(-2,100)
     plt.axhline(config["start"],color="black")
     plt.axhline(config["stop"],color="black")
@@ -301,7 +292,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
         ## state_vector, enstrophy, noise_class, therming_counts
         for aa,al in enumerate(algo):
             torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
-        torch.save(noise_classes_sim,config["save_string"]+"/sim_noise.pt")
 
     ss_emu,nan_emu=util.spectral_similarity(ke_ic[1],ke_emu[1])
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
