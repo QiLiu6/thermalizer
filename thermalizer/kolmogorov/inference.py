@@ -41,7 +41,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     """
 
     config={}
-    config["save_dir"]="/scratch/cp3759/thermalizer_data/test_therms"
+    config["save_dir"]="/scratch/cp3759/thermalizer_data/icml_inferences"
     config["identifier"]=identifier
     config["save_string"]=config["save_dir"]+"/"+config["identifier"]
     if solo_run:
@@ -111,6 +111,17 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     end = time.time()
     algo_time=end-start
     print("Algo time =", algo_time)
+
+    ## Save tensors before generating figures, to avoid losing data if there's a crash
+    if solo_run and save:
+        ## Tensors are here: https://github.com/Chris-Pedersen/thermalizer/blob/main/thermalizer/kolmogorov/performance.py
+        ## state_vector, enstrophy, noise_class
+        for aa,em in enumerate(emu):
+            torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
+        ## Tensors are here: https://github.com/Chris-Pedersen/thermalizer/blob/main/thermalizer/kolmogorov/performance.py
+        ## state_vector, enstrophy, noise_class, therming_counts
+        for aa,al in enumerate(algo):
+            torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
 
     ## Enstrophy figure
     enstrophy_figure=plt.figure()
@@ -281,17 +292,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     plt.xlabel("Emulator step")
     wandb.log({"Noise classes": wandb.Image(fig_noise_classes)})
     plt.close()
-
-    ## Save tensors
-    if solo_run and save:
-        ## Tensors are here: https://github.com/Chris-Pedersen/thermalizer/blob/main/thermalizer/kolmogorov/performance.py
-        ## state_vector, enstrophy, noise_class
-        for aa,em in enumerate(emu):
-            torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
-        ## Tensors are here: https://github.com/Chris-Pedersen/thermalizer/blob/main/thermalizer/kolmogorov/performance.py
-        ## state_vector, enstrophy, noise_class, therming_counts
-        for aa,al in enumerate(algo):
-            torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
 
     ss_emu,nan_emu=util.spectral_similarity(ke_ic[1],ke_emu[1])
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
