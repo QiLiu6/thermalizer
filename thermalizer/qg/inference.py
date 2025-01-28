@@ -30,7 +30,7 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermal
     """
 
     config={}
-    config["save_dir"]="/scratch/cp3759/thermalizer_data/test_therms"
+    config["save_dir"]="/scratch/cp3759/thermalizer_data/icml_inferences"
     config["identifier"]=identifier
     config["save_string"]=config["save_dir"]+"/"+config["identifier"]
     if solo_run:
@@ -80,6 +80,13 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermal
     end = time.time()
     algo_time=end-start
     print("Algo time =", algo_time)
+
+    ## Save tensors before generating figures, to avoid losing data if there's a crash
+    if solo_run and save:
+        for aa,em in enumerate(emu):
+            torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
+        for aa,al in enumerate(algo):
+            torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
 
     ## Ticker tape figure
     ticker=plt.figure(figsize=(20,3))
@@ -301,13 +308,6 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermal
     plt.xlabel("Emulator step")
     wandb.log({"Noise classes": wandb.Image(fig_noise_classes)})
     plt.close()
-
-    ## Save tensors
-    if solo_run and save:
-        for aa,em in enumerate(emu):
-            torch.save(em,config["save_string"]+"/emu_%d.pt" % (aa+1))
-        for aa,al in enumerate(algo):
-            torch.save(al,config["save_string"]+"/therm_%d.pt" % (aa+1))
 
     #ss_emu,nan_emu=util.spectral_similarity(ke_ic[1],ke_emu[1]) ## This bugs out due to infs/nan
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
