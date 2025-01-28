@@ -118,6 +118,49 @@ def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fals
     return state_vector, enstrophies, noise_classes, therming_counts
 
 
+def therm_algo_free(ics,emu,therm,n_steps=100,start=10,stop=4,forward=True,silent=False,noise_limit=100):
+    """ Thermalization algorithm  - correct algo where we only thermalize elements over the
+        initialisation threshold. Here we don't store the whole trajectory, so we can run for longer
+        than memory requirement normally allows.
+        
+        Input parameters:
+        ics:         initial conditions for emulator
+        emu:         torch emulator model
+        therm:       diffusion model object
+        n_steps:     how many emulator steps to run
+        start:       noise level to start thermalizing
+        stop:        noise level to stop thermalizing
+        forward:     Add forward diffusion noise when thermalizing
+        silent:      silence tqdm progress bar (for slurm scripts)
+        noise_limit: if predicted noise level exceeds this threshold, cut the run
+
+        returns: state_vector"""
+
+    ## Set ICs
+    state_vector=ics
+    
+    ## Run
+    with torch.no_grad(): 
+        for aa in tqdm(range(1,n_steps),disable=silent):
+            ## Emulator step
+            state_vector=emu(state_vector)+state_vector
+            ## Noise level check
+            preds=therm.model.noise_class(state_vector)
+            ## Indices of thermalized fields
+            therm_select=preds>(start)
+            therming=state_vector[therm_select]
+            ## If we have any fields over threshold, run therm
+            if len(therming)>0:
+                thermed,counts=therm.denoise_heterogen(therming,preds[therm_select],stop=stop,forward_diff=forward)
+                for bb,idx in enumerate(torch.argwhere(therm_select).flatten()):
+                    state_vector[idx]=thermed[bb].squeeze()
+            if noise_limit:
+                if preds.max()>noise_limit:
+                    print("breaking due to noise limit at point %d" % aa)
+                    break
+    return state_vector, aa
+
+
 class QGAnimation():
     def __init__(self,ds,emu,fps=10,nSteps=1000,skip=1,savestring=None):
         """ Animate a simulated and emulated trajectory side by side
