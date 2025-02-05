@@ -166,17 +166,22 @@ def therm_algo_free(ics,emu,therm,n_steps=100,start=10,stop=4,forward=True,silen
 
 class EmulatorRollout():
     """ Run a batch of emulator rollouts along test trajectories """
-    def __init__(self,test_suite,model_emu,residual=True):
+    def __init__(self,test_suite,model_emu,residual=True,sigma=None,silence=True):
         """ test_suite: torch tensor of test data with shape [batch, snapshot, Nx, Ny], where
                         snapshots are taken 10 numerical timesteps apart
             model_emu:  a trained pytorch CNN emulator of the residuals, over 10 numerical timesteps apart
             residual:   bool to determine whether our emulator predicts the state or residuals between two
                         timesteps
+            sigma:      Toggle whether or not we are running a stochastic trajectory. If sigma is None, the
+                        trajectory is deterministc. If sigma is a scalar, this is the variance of the noise
+                        we add at each step.
         """
         self.test_suite=test_suite
         self.test_suite/=model_emu.config["field_std"]
         self.model_emu=model_emu
         self.residual=residual
+        self.sigma=sigma
+        self.silence=silence
 
         ## Set up field tensors
         self.emu=torch.zeros(self.test_suite.shape,dtype=torch.float32)
@@ -216,7 +221,7 @@ class EmulatorRollout():
 
     @torch.no_grad()
     def _evolve(self):
-        for aa in range(1,len(self.test_suite[1])):
+        for aa in tqdm(range(1,len(self.test_suite[1])),disable=self.silent):
             ## Step fields forward
             emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1).to(self.device)
             preds=self.model_emu(emu_unsq)
@@ -226,112 +231,14 @@ class EmulatorRollout():
                 #self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze().cpu()
             else:
                 self.emu[:,aa,:,:]=(preds).squeeze().cpu()
+            if self.sigma: ## Add noise if we are running a stochastic trajectory
+                self.emu[:,aa,:,:]+=torch.randn_like(self.emu[:,aa,:,:])*self.sigma
 
             ## MSE metrics
             loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
             self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2))
             loss=self.mseloss(self.test_suite[:,aa],self.emu[:,aa])
             self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2))
-
-    def _KE_spectra(self):
-        ## Move to cpu for KE spectra calculation
-        self.test_suite=self.test_suite.to("cpu")
-        self.emu=self.emu.to("cpu")
-        self.therm=self.therm.to("cpu")
-        for aa in tqdm(range(1,len(self.test_suite[1]))):
-            for bb in range(0,len(self.test_suite[0])):
-                _,ke=util.get_ke(self.test_suite[aa,bb],self.grid)
-                self.ke_true[aa,bb]=torch.tensor(ke)
-                _,ke=util.get_ke(self.emu[aa,bb],self.grid)
-                self.ke_emu[aa,bb]=torch.tensor(ke)
-                _,ke=util.get_ke(self.therm[aa,bb],self.grid)
-                self.ke_therm[aa,bb]=torch.tensor(ke)
-  
-        ## Move to back to gpu
-        self.test_suite=self.test_suite.to(self.device)
-        self.emu=self.emu.to(self.device)
-        self.therm=self.therm.to(self.device)
-
-
-## NB can prob unifiy the score and DDPM classes with a common parent
-## but if we end up ditching DDPM, we can just delete that. Lets see how
-## score-matched tests go
-class ThermalizeKolmogorovScore():
-    def __init__(self,test_suite,model_emu,model_therm,thermalize_delay=100,thermalize_interval=5,thermalize_timesteps=1,thermalize_h=0.01):
-        self.test_suite=test_suite/model_emu.config["field_std"]
-        self.model_emu=model_emu
-        self.model_therm=model_therm
-        self.thermalize_delay=thermalize_delay
-        self.thermalize_interval=thermalize_interval
-        self.thermalize_timesteps=thermalize_timesteps
-        self.thermalize_h=thermalize_h
-
-        ## Set up field tensors
-        self.emu=torch.zeros(self.test_suite.shape)
-        self.therm=torch.zeros(self.test_suite.shape)
-
-        ## Ensure models are in eval
-        self.model_emu.eval()
-        self.model_therm.eval()
-        
-        if torch.cuda.is_available():
-            self.device=torch.device('cuda')
-            ## Put models on GPU
-            self.model_emu=self.model_emu.to(self.device)
-            self.model_therm=self.model_therm.to(self.device)
-            ## Put tensors on GPU
-            self.test_suite=self.test_suite.to(self.device)
-            self.emu=self.emu.to(self.device)
-            self.therm=self.therm.to(self.device)
-
-        ## Set t=0 to be the same
-        self.emu[:,0,:,:]=self.test_suite[:,0,:,:]
-        self.therm[:,0,:,:]=self.test_suite[:,0,:,:]
-
-        self._init_metrics()
-
-    def _init_metrics(self):
-        self.mseloss=torch.nn.MSELoss(reduction="none")
-        ## Set up metric tensors
-        self.mse_auto=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
-        self.mse_emu=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
-        self.mse_therm=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
-
-        self.autocorr=[]
-        self.corr_emu=[]
-        self.corr_therm=[]
-
-        self.grid=util.fourierGrid(64)
-        self.ke_true=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1],len(self.grid.k1d_plot))
-        self.ke_emu=torch.zeros(self.ke_true.shape)
-        self.ke_therm=torch.zeros(self.ke_true.shape)
-
-        return
-
-    @torch.no_grad()
-    def _evolve(self):
-        for aa in tqdm(range(1,len(self.test_suite[1]))):
-            ## Step fields forward
-            emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1)
-            self.emu[:,aa,:,:]=(self.model_emu(emu_unsq)+emu_unsq).squeeze()
-
-            therm_unsq=self.therm[:,aa-1,:,:].unsqueeze(1)
-            self.therm[:,aa,:,:]=(self.model_emu(therm_unsq)+therm_unsq).squeeze()
-
-            should_thermalize = (aa % self.thermalize_interval == 0) and (aa>self.thermalize_delay)
-            if should_thermalize:
-                for step in range(self.thermalize_timesteps):
-                    z=torch.randn_like(self.therm[:,aa,:,:],device=self.device)
-                    thermed=self.model_therm(self.therm[:,aa,:,:].unsqueeze(1))
-                    self.therm[:,aa,:,:]+=thermed.squeeze()*0.5*self.thermalize_h+math.sqrt(self.thermalize_h)*z
-
-            ## MSE metrics
-            loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
-            self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2))
-            loss=self.mseloss(self.test_suite[:,aa],self.emu[:,aa])
-            self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2))
-            loss=self.mseloss(self.test_suite[:,aa],self.therm[:,aa])
-            self.mse_therm[:,aa]=torch.mean(loss,dim=(1,2))
 
     def _KE_spectra(self):
         ## Move to cpu for KE spectra calculation
@@ -602,162 +509,21 @@ class KolmogorovAnimation():
         return 
         
 
-class LangevinAnimation():
-    def __init__(self,ds,model,fps=10,nSteps=1000,skip=50,noise_step=20,savestring=None,beta=0.001):
-        """ Diffuse
-            """
-        self.model=model
-        self.fps=fps
-        self.nSteps=nSteps
-        self.nFrames=int(self.nSteps)
-        self.pred=ds
-        self.skip=skip
-        self.beta=0.0001
-        self.noise_step=noise_step
-        self.savestring=savestring
-        self.beta=beta
-
-        self.i=0
-        
-    def _push_forward(self):
-        """ Update predicted q by one emulator pass """
-        for aa in range(self.skip):
-            self.pred=lang_step_naive(self.pred,self.noise_step,self.beta)
-            self.i+=1
-        
-        return
-    
-    def animate(self):
-        fig, self.axs = plt.subplots(2, 5,figsize=(14,6))
-        self.title=fig.suptitle("Thermalizer noise level %d, Langevin step %d"  % (self.noise_step, 0))
-        for aa,axes in enumerate(self.axs.flatten()):
-            axim=axes.imshow(self.pred[aa].squeeze().cpu(), cmap=sns.cm.icefire,interpolation='none')
-            fig.colorbar(axim, ax=axes)
-            axes.set_xticks([]); axes.set_yticks([])
-        fig.tight_layout()
-        
-        anim = animation.FuncAnimation(
-                                       fig, 
-                                       self.animate_func, 
-                                       frames = self.nFrames,
-                                       interval = 1000 / self.fps, # in ms
-                                       )
-        plt.close()
-        
-        if self.savestring:
-            print("saving")
-            # saving to m4 using ffmpeg writer 
-            writervideo = animation.FFMpegWriter(fps=self.fps) 
-            anim.save('%s.mp4' % self.savestring, writer=writervideo) 
-            plt.close()
-        else:
-            return HTML(anim.to_html5_video())
-        
-    def animate_func(self,i):
-        if i % self.fps == 0:
-            print(i, end =' ' )
-            
-        for aa,axes in enumerate(self.axs.flatten()):
-            self.title.set_text("Thermalizer noise level %d, Langevin step %d"  % (self.noise_step, self.i))
-            image=self.pred[aa].cpu().squeeze().numpy()
-            axim=axes.imshow(image, cmap=sns.cm.icefire,interpolation='none')
-            axim.set_clim(-np.max(np.abs(image)), np.max(np.abs(image)))
-        
-        self._push_forward()
-        
-        return 
-
-
-class ScoreAnimation():
-    """ Animation to plot the score as we add incrementally increasing Gaussian noise
-        to a held-out sample. """
-    def __init__(self,img,thermalizer,noise_coeff=1,fps=10,nSteps=1000,savestring=None,skip=1):
-        """ img=torch tensor of a single kolmogorov field
-            thermalizer=trained thermalizer model
-            noise_coeff=coefficient of the most amount of noise we want to add. We will incrementally
-            move to this amount of noise in a linear fashion.
-            """
-        self.img=img ## torch tensor
-        self.img_plot=self.img
-        
-        self.thermalizer=thermalizer
-        self.therm_img=img
-        self.noise_coeff=noise_coeff
-        self.fps=fps
-        self.nSteps=nSteps
-        self.skip=skip
-        self.nFrames=int(self.nSteps)
-        self.noise=np.linspace(0,self.noise_coeff,self.nFrames)
-        self.savestring=None
-        self.noise_add=torch.rand(self.img.shape)
-        self.norms=torch.zeros(self.nFrames)
-
-    def _inc_noise(self):
-        self.img_plot=self.img+self.noise[self.i]*self.noise_add
-        self.therm_img=self.thermalizer(self.img_plot.unsqueeze(0).unsqueeze(0)).detach()
-        self.norms[self.i]=torch.linalg.norm(self.therm_img.flatten())
-        
-    
-    def animate(self):
-        fig, axs = plt.subplots(1, 2,figsize=(14,6))
-        ## Upper layer
-        self.ax1=axs[0].imshow(self.img, cmap=sns.cm.icefire,interpolation='none')
-        fig.colorbar(self.ax1, ax=axs[0])
-        axs[0].set_xticks([]); axs[0].set_yticks([])
-        axs[0].set_title("Input image")
-
-        self.ax2=axs[1].imshow(self.therm_img, cmap=sns.cm.icefire,interpolation='none')
-        fig.colorbar(self.ax2, ax=axs[1])
-        axs[1].set_xticks([]); axs[1].set_yticks([])
-        axs[1].set_title("Thermalizer output")
-
-        self.time_text=axs[0].text(-2,-2,"")
-        
-        
-        #fig.tight_layout()
-        
-        anim = animation.FuncAnimation(
-                                       fig, 
-                                       self.animate_func, 
-                                       frames = self.nFrames,
-                                       interval = 1000 / self.fps, # in ms
-                                       )
-        plt.close()
-        
-        if self.savestring:
-            print("saving")
-            # saving to m4 using ffmpeg writer 
-            writervideo = animation.FFMpegWriter(fps=self.fps) 
-            anim.save('%s.mp4' % self.savestring, writer=writervideo) 
-            plt.close()
-        else:
-            return HTML(anim.to_html5_video())
-        
-    def animate_func(self,i):
-        if i % self.fps == 0:
-            print( '.', end ='' )
-            
-        self.i=self.skip*i
-        self._inc_noise()
-        self.time_text.set_text("%.2f Noised amount" % (self.noise[self.i]))
-    
-        ## Set image and colorbar for each panel
-        image=self.img_plot.cpu().numpy()
-        lim=np.max(np.abs(image))
-        self.ax1.set_array(image)
-        self.ax1.set_clim(-lim,lim)
-        
-        image=self.therm_img.squeeze().numpy()
-        lim=np.max(np.abs(image))
-        self.ax2.set_array(image)
-        self.ax2.set_clim(-lim,lim)
-        return 
-
-def long_run_figures(model,emu_run,steps=int(1e6),residual=True):
+def long_run_figures(model,emu_run,steps=int(1e6),residual=True,sigma=None,exit_criterion=None):
     """ For a given emulator model and set of test ICs, run for `steps` iterations
         We will plot enstrophy over time, and plot the fields at the end of the rollout
         Here we are testing long term stability - on timescales longer than we can store
         test data for.
+
+        model:    torch.nn.Module emulator
+        emu_run:  initial conditions for all trajectories
+        steps:    total number of steps to run
+        residual: bool determining whether this is a state or residual emulator
+        sigmas:   None for a deterministic trajectory, otherwise set the std dev value
+                  for noise added at each timestep
+        exit_criterion:
+                  maximum enstrophy value at which the trajectory exits (prevents us from
+                  running long trajectories after a trajectory has gone unstable)
         
         Test set will be just the initial states, i.e. [batch size, nx, ny]
         Also assuming model is already on GPU"""
@@ -785,6 +551,7 @@ def long_run_figures(model,emu_run,steps=int(1e6),residual=True):
     plt.title("Enstrophy from long emulator rollout")
     for aa in range(len(enstrophies)):
         plt.plot(enstrophies[aa],color="gray",alpha=0.4)
+    enstrophies=enstrophies[:aa]
     plt.ylim(1000,10000)
     plt.xlabel("Emulator timestep")
     plt.ylabel("Enstrophy")
@@ -797,30 +564,3 @@ def long_run_figures(model,emu_run,steps=int(1e6),residual=True):
         plt.colorbar()
     return enstrophy_figure, field_figure
 
-
-def plot_thermalizer_norms(test_snap,thermalizer,num_trials=50,noise_steps=200,noise_coeff=1):
-    """ For a given test image, add incremental amounts of noise to it. Pass this image
-        to the thermalizer, and then plot the L2 norm of the score field that the thermalizer
-        returns """
-    thermalizer=thermalizer.to("cuda")
-    thermalizer.eval()
-    num_trials=50
-    imgs=torch.tensor(test_snap.unsqueeze(0).repeat(num_trials,1,1),device="cuda")
-    noise_levels=np.logspace(-2,2,noise_steps)
-    norms=torch.zeros(num_trials,noise_steps)
-    noises=torch.randn(size=(num_trials,test_snap.shape[0],test_snap.shape[1]),device="cuda")
-    
-    with torch.no_grad():
-        for aa in range(noise_steps):
-            therm_out=thermalizer((imgs+noise_levels[aa]*noises).unsqueeze(1)).squeeze()
-            norms_level=torch.einsum("ijk,ijk->i",therm_out,therm_out)
-            norms[:,aa]=norms_level
-    
-    norms2=norms.detach().cpu()
-    fig=plt.figure()
-    for aa in range(len(norms)):
-        plt.loglog(noise_levels,norms[aa],color="gray",alpha=0.4)
-    plt.xlabel("noise coeff")
-    plt.ylabel("L2 norm of score field")
-    plt.title(r"$\parallel s_\theta(\mathbf{x})\parallel^2$ as we apply noise to a true image")
-    return fig
