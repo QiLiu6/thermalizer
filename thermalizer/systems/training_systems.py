@@ -163,6 +163,7 @@ class ResidualEmulatorTrainer(Trainer):
         self.n_rollout=1
         self.config["emulator_loss"]="ResidualResidual"
         self.residual=True
+        self.sigma=self.config.get("variance")
 
     def training_loop(self):
         """ Training loop for residual emulator. We push loss to wandb
@@ -181,6 +182,8 @@ class ResidualEmulatorTrainer(Trainer):
                     x_t=x_data[:,0]
                 else:
                     x_t=x_dt+x_t
+                    if self.sigma:
+                        x_t+=self.sigma*torch.randn_like(x_t,device=x_t.device)
                 x_dt=self.model(x_t)
                 loss_dt=self.criterion(x_dt,x_data[:,aa+1]-x_data[:,aa,:])
                 loss_s=self.criterion(x_data[:,aa+1],x_t+x_dt)
@@ -234,6 +237,8 @@ class ResidualEmulatorTrainer(Trainer):
                         x_t=x_data[:,0]
                     else:
                         x_t=x_dt+x_t
+                        if self.sigma:
+                            x_t+=self.sigma*torch.randn_like(x_t,device=x_t.device)
                     x_dt=self.model(x_t)
                     loss_dt=self.criterion(x_dt,x_data[:,aa+1]-x_data[:,aa,:])
                     loss_s=self.criterion(x_data[:,aa+1],x_t+x_dt)
@@ -366,7 +371,8 @@ class ResidualEmulatorTrainer(Trainer):
         ## Make sure train and test increments are the same
         assert test_suite["increment"]==self.config["increment"]
 
-        fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"],steps=steps,residual=self.residual)
+        fig_ens,fig_field=performance.long_run_figures(self.model,test_suite["data"][:,0,:,:].to("cuda")/self.model.config["field_std"],steps=steps,
+                                    residual=self.residual,sigma=self.sigma)
         if self.logging and self.wandb_init:
             wandb.log({"Long Ens": wandb.Image(fig_ens)})
             wandb.log({"Long field": wandb.Image(fig_field)})
@@ -393,7 +399,7 @@ class ResidualEmulatorTrainer(Trainer):
         """
 
         ## Run rollout against test sims, plot MSE
-        emu_rollout=performance.EmulatorRollout(test_suite["data"],self.model,residual=self.residual)
+        emu_rollout=performance.EmulatorRollout(test_suite["data"],self.model,residual=self.residual,sigma=self.sigma)
         emu_rollout._evolve()
         fig_mse=plt.figure(figsize=(14,5))
         plt.suptitle("MSE wrt. true trajectory, emu step=%.2f" % test_suite["increment"])
