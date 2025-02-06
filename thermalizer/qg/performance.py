@@ -199,10 +199,10 @@ class EmulatorRollout():
             #preds=
             #means=torch.mean(preds,axis=(-1,-2)) ## If we wanna do zero-mean, which we don't
             if self.residual:
-                self.emu[:,aa,:,:]=self.model_emu(self.emu[:,aa,:,:])+self.emu[:,aa,:,:]
+                self.emu[:,aa,:,:]=self.model_emu(self.emu[:,aa-1,:,:])+self.emu[:,aa-1,:,:]
                 #self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze().cpu()
             else:
-                self.emu[:,aa,:,:]=self.model_emu(self.emu[:,aa,:,:])
+                self.emu[:,aa,:,:]=self.model_emu(self.emu[:,aa-1,:,:])
             if self.sigma: ## Add noise if we are running a stochastic trajectory
                 self.emu[:,aa,:,:]+=torch.randn_like(self.emu[:,aa,:,:],device=self.emu[:,aa,:,:].device)*self.sigma
 
@@ -211,6 +211,11 @@ class EmulatorRollout():
             self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2,3))
             loss=self.mseloss(self.test_suite[:,aa],self.emu[:,aa])
             self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2,3))
+            if self.mse_emu[:,aa].min()>10000:
+                break
+            
+        self.emu=self.emu[:,:aa,:,:]
+        self.mse_emu=self.mse_emu[:,:aa]
 
 
 class QGAnimation():
