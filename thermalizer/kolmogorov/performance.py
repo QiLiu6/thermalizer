@@ -221,7 +221,7 @@ class EmulatorRollout():
 
     @torch.no_grad()
     def _evolve(self):
-        for aa in tqdm(range(1,len(self.test_suite[1])),disable=self.silent):
+        for aa in tqdm(range(1,len(self.test_suite[1])),disable=self.silence):
             ## Step fields forward
             emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1).to(self.device)
             preds=self.model_emu(emu_unsq)
