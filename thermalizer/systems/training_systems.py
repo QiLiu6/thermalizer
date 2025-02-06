@@ -48,6 +48,10 @@ class Trainer:
         self.training_step=0 ## Counter to keep track of number of weight updates
         self.wandb_init=False ## Bool to track whether or not wandb run has been initialised
         self.ema=None
+        if self.config.get("wandb_log_freq"):
+            self.log_freq=self.config.get("wandb_log_freq")
+        else:
+            self.log_freq=50
 
         self.gradient_clip=self.config["optimization"].get("gradient_clip")
         
@@ -142,6 +146,12 @@ class Trainer:
         self.optimizer=torch.optim.AdamW(self.model.parameters(),
                             lr=self.config["optimization"]["lr"],
                             weight_decay=self.config["optimization"]["wd"])
+        if self.config["optimization"].get("scheduler_step"):
+            self.scheduler=torch.optim.lr_scheduler.StepLR(self.optimizer,
+                    self.config["optimization"]["scheduler_step"],
+                    gamma=self.config["optimization"]["scheduler_gamma"], last_epoch=-1)
+        else:
+            self.scheduler=None
 
     def training_loop(self):
         raise NotImplementedError("Implemented by subclass")
@@ -196,12 +206,17 @@ class ResidualEmulatorTrainer(Trainer):
                 torch.nn.utils.clip_grad_value_(self.model.parameters(), clip_value=self.gradient_clip)
 
             self.optimizer.step()
-            if self.logging and (self.training_step%10==0):
+            if self.scheduler:
+                self.scheduler.step()
+
+            if self.logging and (self.training_step%self.log_freq==0):
                 log_dic={}
                 log_dic["train_loss_resid"]=loss.item()
                 log_dic["train_loss_state"]=state_loss
                 log_dic["training_step"]=self.training_step
                 log_dic["n_rollout"]=self.n_rollout
+                if self.scheduler:
+                    log_dic["lr"]=self.scheduler.get_last_lr()[-1]
                 wandb.log(log_dic)
             self.training_step+=1
 
@@ -492,11 +507,16 @@ class ResidualStateEmulatorTrainer(ResidualEmulatorTrainer):
                 loss+=loss_dt
             loss.backward()
             self.optimizer.step()
-            if self.logging and (self.training_step%10==0):
+            if self.scheduler:
+                self.scheduler.step()
+
+            if self.logging and (self.training_step%self.log_freq==0):
                 log_dic={}
                 log_dic["train_loss_state"]=loss.item()
                 log_dic["training_step"]=self.training_step
                 log_dic["n_rollout"]=self.n_rollout
+                if self.scheduler:
+                    log_dic["lr"]=self.scheduler.get_last_lr()[-1]
                 wandb.log(log_dic)
             self.training_step+=1
 
@@ -577,11 +597,16 @@ class StateEmulatorTrainer(ResidualEmulatorTrainer):
                 loss+=loss_dt
             loss.backward()
             self.optimizer.step()
-            if self.logging and (self.training_step%10==0):
+            if self.scheduler:
+                self.scheduler.step()
+
+            if self.logging and (self.training_step%self.log_freq==0):
                 log_dic={}
                 log_dic["train_loss_state"]=loss.item()
                 log_dic["training_step"]=self.training_step
                 log_dic["n_rollout"]=self.n_rollout
+                if self.scheduler:
+                    log_dic["lr"]=self.scheduler.get_last_lr()[-1]
                 wandb.log(log_dic)
             self.training_step+=1
 
@@ -678,12 +703,17 @@ class ThermalizerTrainer(Trainer):
             loss_classifier=F.cross_entropy(pred_level,t)
             loss=loss_score+self.lambda_c*loss_classifier
             loss.backward()
+            
             self.optimizer.step()
+            if self.scheduler:
+                self.scheduler.step()
 
-            if self.logging and (self.training_step%10==0):
+            if self.logging and (self.training_step%self.log_freq==0):
                 log_dic={}
                 log_dic["train_loss"]=loss.item()
                 log_dic["training_step"]=self.training_step
+                if self.scheduler:
+                    log_dic["lr"]=self.scheduler.get_last_lr()[-1]
                 wandb.log(log_dic)
             self.training_step+=1
 
@@ -881,10 +911,15 @@ class RefinerTrainer(Trainer):
             loss,_,_=self.refiner_model.train_step((xx,yy))
             loss.backward()
             self.optimizer.step()
-            if self.logging and (self.training_step%10==0):
+            if self.scheduler:
+                self.scheduler.step()
+
+            if self.logging and (self.training_step%self.log_freq==0):
                 log_dic={}
                 log_dic["train_loss"]=loss.item()
                 log_dic["train_step"]=self.training_step
+                if self.scheduler:
+                    log_dic["lr"]=self.scheduler.get_last_lr()[-1]
                 wandb.log(log_dic)
             self.training_step+=1
             if self.ema:
