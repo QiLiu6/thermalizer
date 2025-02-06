@@ -13,13 +13,14 @@ from tqdm import tqdm
 ####
 ### Functions to run emulator and thermalize trajectories
 ###
-def run_emu(ics,emu,therm=None,n_steps=1000,silent=False):
+def run_emu(ics,emu,therm=None,n_steps=1000,sigma=None,silent=False):
     """ Run an emuluator on some ICs for 2 layer QG
         ics:     initial conditions for emulator
         emu:     torch emulator model
         therm:   diffusion model object - pass this if we want to
                  also classify the noise level during rollout
         n_steps: how many emulator steps to run
+        sigma:   variance level in case we are running a stochastic trajectory
         silent:  silence tqdm progress bar (for slurm scripts) """
     ## Set up state and diagnostic tensors
     state_vector=torch.zeros((len(ics),n_steps,2,64,64),device="cuda")
@@ -33,41 +34,14 @@ def run_emu(ics,emu,therm=None,n_steps=1000,silent=False):
     with torch.no_grad(): 
         for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
             state_vector[:,aa]=emu(state_vector[:,aa-1])+state_vector[:,aa-1]
+            if sigma:
+                state_vector[:,aa]+=sigma*self.torch.randn_like(state_vector[:,aa],
+                                        device=state_vector[:,aa].device)
             if therm:
                 preds=therm.model.noise_class(state_vector[:,aa])
                 noise_classes[:,aa]=preds.cpu()
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
     return state_vector, enstrophies, noise_classes
-
-def therm_algo_batc(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False):
-    """ Thermalization algorithm 1 - what I originally tested, passing whole batch to
-        thermalizer model:
-        ics:     initial conditions for emulator
-        emu:     torch emulator model
-        therm:   diffusion model object
-        n_steps: how many emulator steps to run
-        start:   noise level to start thermalizing
-        stop:    noise level to stop thermalizing
-        forward: Add forward diffusion noise when thermalizing
-        silent:  silence tqdm progress bar (for slurm scripts) """
-    ## Set up state and diagnostic tensors
-    state_vector=torch.zeros((len(ics),n_steps,2,64,64),device="cuda")
-    ## Set ICs
-    state_vector[:,0]=ics
-    state_vector=state_vector.to("cuda")
-    noise_classes=torch.zeros(len(state_vector),len(state_vector[1]))
-    therming_counts=torch.zeros_like(noise_classes)
-
-    with torch.no_grad(): 
-        for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
-            state_vector[:,aa]=emu(state_vector[:,aa-1]).squeeze()+state_vector[:,aa-1]
-            preds=therm.model.noise_class(state_vector[:,aa])
-            noise_classes[:,aa]=preds.cpu()
-            if max(preds)>start:
-                thermed,therming_counts[:,aa]=therm.denoise_heterogen(state_vector[:,aa],preds,stop=stop,forward_diff=forward)
-                state_vector[:,aa]=thermed.squeeze()
-    enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
-    return state_vector, enstrophies, noise_classes, therming_counts
 
 
 def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False,noise_limit=100):
@@ -118,7 +92,8 @@ def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fals
     return state_vector, enstrophies, noise_classes, therming_counts
 
 
-def therm_algo_free(ics,emu,therm,n_steps=100,start=10,stop=4,forward=True,silent=False,noise_limit=100):
+def therm_algo_free(ics,emu,therm,n_steps=100,start=10,stop=4,forward=True,silent=False,
+                            noise_limit=100, sigma=None):
     """ Thermalization algorithm  - correct algo where we only thermalize elements over the
         initialisation threshold. Here we don't store the whole trajectory, so we can run for longer
         than memory requirement normally allows.
@@ -133,8 +108,9 @@ def therm_algo_free(ics,emu,therm,n_steps=100,start=10,stop=4,forward=True,silen
         forward:     Add forward diffusion noise when thermalizing
         silent:      silence tqdm progress bar (for slurm scripts)
         noise_limit: if predicted noise level exceeds this threshold, cut the run
+        sigma:       std dev in case we are running a stochastic emulator trajectory
 
-        returns: state_vector"""
+        returns: state_vector (same shape as ics) """
 
     ## Set ICs
     state_vector=ics
@@ -144,6 +120,10 @@ def therm_algo_free(ics,emu,therm,n_steps=100,start=10,stop=4,forward=True,silen
         for aa in tqdm(range(1,n_steps),disable=silent):
             ## Emulator step
             state_vector=emu(state_vector)+state_vector
+            if sigma:
+                state_vector+=sigma*self.torch.randn_like(state_vector,
+                                        device=state_vector.device)
+
             ## Noise level check
             preds=therm.model.noise_class(state_vector)
             ## Indices of thermalized fields
@@ -159,6 +139,78 @@ def therm_algo_free(ics,emu,therm,n_steps=100,start=10,stop=4,forward=True,silen
                     print("breaking due to noise limit at point %d" % aa)
                     break
     return state_vector, aa
+
+
+class EmulatorRollout():
+    """ Run a batch of emulator rollouts along QG test trajectories """
+    def __init__(self,test_suite,model_emu,residual=True,sigma=None,silence=True):
+        """ test_suite: torch tensor of test data with shape [batch, snapshot, Nx, Ny].
+                        For QG these are normalised.
+            model_emu:  a torch.nn.Module emulator
+            residual:   bool to determine whether our emulator predicts the state or residuals between two
+                        timesteps
+            sigma:      Toggle whether or not we are running a stochastic trajectory. If sigma is None, the
+                        trajectory is deterministc. If sigma is a scalar, this is the variance of the noise
+                        we add at each step.
+            silence:    toggle for tqdm progress bar
+        """
+        self.test_suite=test_suite
+        self.model_emu=model_emu
+        self.residual=residual
+        self.sigma=sigma
+        self.silence=silence
+
+        ## Set up field tensors
+        self.emu=torch.zeros(self.test_suite.shape,dtype=torch.float32,device=self.test_suite.device)
+        ## Set t=0 to be the same
+        self.emu[:,0,:,:]=self.test_suite[:,0,:,:]
+
+        ## Ensure models are in eval
+        self.model_emu.eval()
+        
+        if torch.cuda.is_available():
+            #self.device=torch.device('cuda')
+            self.device="cuda"
+            ## Put models on GPU
+            self.model_emu.to(self.device)
+            ## Put tensors on GPU
+            #self.test_suite=self.test_suite.to(self.device)
+            #self.emu=self.emu.to(self.device)
+        else:
+            self.device="cpu"
+
+        self._init_metrics()
+
+    def _init_metrics(self):
+        self.mseloss=torch.nn.MSELoss(reduction="none")
+        ## Set up metric tensors
+        self.mse_auto=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
+        self.mse_emu=torch.zeros(self.test_suite.shape[0],self.test_suite.shape[1])
+
+        self.autocorr=[]
+        self.corr_emu=[]
+
+        return
+
+    @torch.no_grad()
+    def evolve(self):
+        for aa in tqdm(range(1,len(self.test_suite[1])),disable=self.silence):
+            ## Step fields forward
+            #preds=
+            #means=torch.mean(preds,axis=(-1,-2)) ## If we wanna do zero-mean, which we don't
+            if self.residual:
+                self.emu[:,aa,:,:]=self.model_emu(self.emu[:,aa,:,:])+self.emu[:,aa,:,:]
+                #self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze().cpu()
+            else:
+                self.emu[:,aa,:,:]=self.model_emu(self.emu[:,aa,:,:])
+            if self.sigma: ## Add noise if we are running a stochastic trajectory
+                self.emu[:,aa,:,:]+=torch.randn_like(self.emu[:,aa,:,:],device=self.emu[:,aa,:,:].device)*self.sigma
+
+            ## MSE metrics
+            loss=self.mseloss(self.test_suite[:,0],self.test_suite[:,aa])
+            self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2,3))
+            loss=self.mseloss(self.test_suite[:,aa],self.emu[:,aa])
+            self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2,3))
 
 
 class QGAnimation():
