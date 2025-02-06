@@ -167,14 +167,15 @@ def therm_algo_free(ics,emu,therm,n_steps=100,start=10,stop=4,forward=True,silen
 class EmulatorRollout():
     """ Run a batch of emulator rollouts along test trajectories """
     def __init__(self,test_suite,model_emu,residual=True,sigma=None,silence=True):
-        """ test_suite: torch tensor of test data with shape [batch, snapshot, Nx, Ny], where
-                        snapshots are taken 10 numerical timesteps apart
-            model_emu:  a trained pytorch CNN emulator of the residuals, over 10 numerical timesteps apart
+        """ test_suite: torch tensor of test data with shape [batch, snapshot, Nx, Ny]. For Kolmogorov flows
+                        these are not normalised, so we need to normalise using the model's field_std
+            model_emu:  a torch.nn.Module emulator
             residual:   bool to determine whether our emulator predicts the state or residuals between two
                         timesteps
             sigma:      Toggle whether or not we are running a stochastic trajectory. If sigma is None, the
                         trajectory is deterministc. If sigma is a scalar, this is the variance of the noise
                         we add at each step.
+            silence:    toggle for tqdm progress bar
         """
         self.test_suite=test_suite
         self.test_suite/=model_emu.config["field_std"]
@@ -225,7 +226,7 @@ class EmulatorRollout():
             ## Step fields forward
             emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1).to(self.device)
             preds=self.model_emu(emu_unsq)
-            means=torch.mean(preds,axis=(-1,-2))
+            #means=torch.mean(preds,axis=(-1,-2)) ## If we wanna do zero-mean, which we don't
             if self.residual:
                 self.emu[:,aa,:,:]=(preds+emu_unsq).squeeze().cpu()
                 #self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze().cpu()
