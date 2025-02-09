@@ -119,11 +119,11 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     ## If we get to the end of the cache list and can't find a run, emu is not defined. So we run the emulator trajectory
     if not loaded_cache:
         emu=performance.run_emu(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],silent=silence)
-        torch.save(emu[0],save_string+"emu_state_%d.p" % aa)
-        torch.save(emu[1],save_string+"emu_enstr_%d.p" % aa)
-        torch.save(emu[2],save_string+"emu_noise_class_%d.p" % aa)
+        torch.save(emu[0],save_string+"emu_state_%d.p" % aa+1)
+        torch.save(emu[1],save_string+"emu_enstr_%d.p" % aa+1)
+        torch.save(emu[2],save_string+"emu_noise_class_%d.p" % aa+1)
         cache_list.append(emu_cache_dict)
-        print("Caching emulator run to %s/emu_X_%d.p" % (save_string,aa))
+        print("Caching emulator run to %s/emu_X_%d.p" % (save_string,aa+1))
         with open(save_string+"cache_list.p", 'wb') as handle:
             pickle.dump(cache_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
