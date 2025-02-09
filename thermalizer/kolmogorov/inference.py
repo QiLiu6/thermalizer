@@ -92,7 +92,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     wandb.config.update(config)
 
     ## So first step is to thermalize according to the predicted timestep
-    softmax = nn.Softmax(dim=1)
     grid=util.fourierGrid(64)
 
     ## Check if emulator run is cached
