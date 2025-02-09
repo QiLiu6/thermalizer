@@ -13,7 +13,7 @@ from tqdm import tqdm
 ####
 ### Functions to run emulator and thermalize trajectories
 ###
-def run_emu(ics,emu,therm=None,n_steps=1000,sigma=None,silent=False,sigma=None):
+def run_emu(ics,emu,therm=None,n_steps=1000,sigma=None,silent=False):
     """ Run an emuluator on some ICs for 2 layer QG
         ics:     initial conditions for emulator
         emu:     torch emulator model
