@@ -1,6 +1,3 @@
-import matplotlib.animation as animation
-from IPython.display import HTML
-
 import thermalizer.models.misc as misc
 import thermalizer.kolmogorov.simulate as simulate
 import thermalizer.kolmogorov.performance as performance
@@ -71,8 +68,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     print("Therm start =",config["start"])
     print("Therm stop =",config["stop"])
 
-    model_emu=misc.load_model(config["emulator"]) ## 4 step DRN, big batch, goes unstable
-    model_emu=model_emu.to("cuda")
+    model_emu=misc.load_model(config["emulator"]).to("cuda")
     model_emu=model_emu.eval()
 
     ## Load test data
@@ -87,27 +83,54 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     ## Get true enstrophys
     ens_true=abs(test_suite["data"]**2).sum(axis=(2,3))
 
-    model_therm=misc.load_diffusion_model(config["thermalizer"])
+    model_therm=misc.load_diffusion_model(config["thermalizer"]).to("cuda")
     model_therm=model_therm.eval()
-    model_therm=model_therm.to("cuda")
 
-
+    ## Update wandb configs
     config["emulator_url"]=model_emu.config["wandb_url"]
     config["thermalizer_url"]=model_therm.config["wandb_url"]
-
-    #wandb.init(project=project, entity="chris-pedersen",config=config,dir=config["save_string"])
     wandb.config.update(config)
 
     ## So first step is to thermalize according to the predicted timestep
     softmax = nn.Softmax(dim=1)
     grid=util.fourierGrid(64)
 
-    ## Run emulator
-    emu=performance.run_emu(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],silent=silence)
+    ## Check if emulator run is cached
+    emu_cache_dict={}
+    emu_cache_dict["thermalizer"]=config["thermalizer"]
+    emu_cache_dict["emulator"]=config["emulator"]
+    emu_cache_dict["sigma"]=config.get("sigma")
+    emu_cache_dict["steps"]=config["steps"]
+
+    save_string="/scratch/cp3759/thermalizer_data/icml_inferences/cached_runs/kolmogorov/"
+    with open(save_string+"cache_list.p", 'rb') as fp:
+        cache_list = pickle.load(fp)
+
+    loaded_cache=False
+    for aa,cached_dict in enumerate(cache_list):
+        if cached_dict==emu_cache_dict:
+            print("Loading cached emulator run from run to %semu_X_%d.p" % (save_string,aa))
+            emu_state=torch.load(save_string+"emu_state_%d.p" % aa)
+            emu_enstr=torch.load(save_string+"emu_enstr_%d.p" % aa)
+            emu_noise_class=torch.load(save_string+"emu_noise_class_%d.p" % aa)
+            emu=[emu_state,emu_enstr,emu_noise_class]
+            loaded_cache=True
+            break
+            
+    ## If we get to the end of the cache list and can't find a run, emu is not defined. So we run the emulator trajectory
+    if not loaded_cache:
+        emu=performance.run_emu(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],silent=silence)
+        torch.save(emu[0],save_string+"emu_state_%d.p" % aa)
+        torch.save(emu[1],save_string+"emu_enstr_%d.p" % aa)
+        torch.save(emu[2],save_string+"emu_noise_class_%d.p" % aa)
+        cache_list.append(emu_cache_dict)
+        print("Caching emulator run to %s/emu_X_%d.p" % (save_string,aa))
+        with open(save_string+"cache_list.p", 'wb') as handle:
+            pickle.dump(cache_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     ## Run thermalizer algorithm
     start = time.time()
-    algo=performance.therm_algo_2(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],config["start"],config["stop"],forward=config["forward_diff"],silent=silence)
+    algo=performance.therm_algo(test_suite["data"][:,0,:,:],model_emu,model_therm,config["steps"],config["start"],config["stop"],forward=config["forward_diff"],silent=silence)
     end = time.time()
     algo_time=end-start
     print("Algo time =", algo_time)
