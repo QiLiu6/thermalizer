@@ -13,7 +13,7 @@ from tqdm import tqdm
 ####
 ### Functions to run emulator and thermalize trajectories
 ###
-def run_emu(ics,emu,therm=None,n_steps=1000,sigma=None,silent=False):
+def run_emu(ics,emu,therm=None,n_steps=1000,sigma=None,silent=False,sigma=None):
     """ Run an emuluator on some ICs for 2 layer QG
         ics:     initial conditions for emulator
         emu:     torch emulator model
@@ -21,7 +21,8 @@ def run_emu(ics,emu,therm=None,n_steps=1000,sigma=None,silent=False):
                  also classify the noise level during rollout
         n_steps: how many emulator steps to run
         sigma:   variance level in case we are running a stochastic trajectory
-        silent:  silence tqdm progress bar (for slurm scripts) """
+        silent:  silence tqdm progress bar (for slurm scripts)
+        sigma:   noise std level if we have a stochastic rollout """
     ## Set up state and diagnostic tensors
     state_vector=torch.zeros((len(ics),n_steps,2,64,64),device="cuda")
     ## Set ICs
@@ -44,18 +45,19 @@ def run_emu(ics,emu,therm=None,n_steps=1000,sigma=None,silent=False):
     return state_vector, enstrophies, noise_classes
 
 
-def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False,noise_limit=100):
+def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=False,noise_limit=100,sigma=None):
     """ Thermalization algorithm - we only thermalize elements over the
         initialisation threshold:
-        ics:     initial conditions for emulator
-        emu:     torch emulator model
-        therm:   diffusion model object
-        n_steps: how many emulator steps to run
-        start:   noise level to start thermalizing
-        stop:    noise level to stop thermalizing
-        forward: Add forward diffusion noise when thermalizing
-        silent:  silence tqdm progress bar (for slurm scripts)
+        ics:         initial conditions for emulator
+        emu:         torch emulator model
+        therm:       diffusion model object
+        n_steps:     how many emulator steps to run
+        start:       noise level to start thermalizing
+        stop:        noise level to stop thermalizing
+        forward:     Add forward diffusion noise when thermalizing
+        silent:      silence tqdm progress bar (for slurm scripts)
         noise_limit: if predicted noise level exceeds this threshold, cut the run
+        sigma:       noise std level if we have a stochastic rollout
 
         returns: state_vector, enstrophies, noise_classes, therming_counts """
 
@@ -71,6 +73,8 @@ def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fals
         for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
             ## Emulator step
             state_vector[:,aa]=emu(state_vector[:,aa-1]).squeeze()+state_vector[:,aa-1]
+            if sigma:
+                state_vector[:,aa]+=sigma*torch.randn_like(state_vector[:,aa],device=state_vector[:,aa].device)
             ## Noise level check
             preds=therm.model.noise_class(state_vector[:,aa])
             noise_classes[:,aa]=preds.cpu() ## Store noise levels
