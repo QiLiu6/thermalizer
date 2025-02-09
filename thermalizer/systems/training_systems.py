@@ -421,7 +421,7 @@ class ResidualEmulatorTrainer(Trainer):
 
             ## Run rollout against test sims, plot MSE
             emu_rollout=performance.EmulatorRollout(test_suite["data"],self.model,residual=self.residual,sigma=self.sigma,silence=silence)
-            emu_rollout._evolve()
+            emu_rollout.evolve()
             fig_mse=plt.figure(figsize=(14,5))
             plt.suptitle("MSE wrt. true trajectory, emu step=%.2f" % test_suite["increment"])
             plt.subplot(1,2,1)
