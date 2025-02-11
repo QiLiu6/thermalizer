@@ -36,7 +36,7 @@ def run_emu(ics,emu,therm=None,n_steps=1000,sigma=None,silent=False):
         for aa in tqdm(range(1,len(state_vector[1])),disable=silent):
             state_vector[:,aa]=emu(state_vector[:,aa-1])+state_vector[:,aa-1]
             if sigma:
-                state_vector[:,aa]+=sigma*self.torch.randn_like(state_vector[:,aa],
+                state_vector[:,aa]+=sigma*torch.randn_like(state_vector[:,aa],
                                         device=state_vector[:,aa].device)
             if therm:
                 preds=therm.model.noise_class(state_vector[:,aa])
