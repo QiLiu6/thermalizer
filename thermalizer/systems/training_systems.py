@@ -483,6 +483,7 @@ class ResidualEmulatorTrainer(Trainer):
                 plt.xlabel("Emulator passes")
                 plt.ylim(0,15000)
             wandb.log({"Enstrophy": wandb.Image(ens_fig)})
+            plt.close()
 
         else:
             ## Otherwise do QG rollout
