@@ -89,7 +89,11 @@ def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fals
                     therming_counts[idx,aa]=counts[bb]
             if noise_limit:
                 if preds.max()>noise_limit:
-                    print("breaking due to noise limit")
+                    print("breaking due to noise limit at traj %d" % preds.argmax().item())
+                    ## Truncate tensors to cutoff length
+                    state_vector=state_vector[:,:aa+1]
+                    noise_classes=noise_classes[:,:aa+1]
+                    therming_counts=therming_counts[:,:aa+1]
                     break
     state_vector=state_vector.to("cpu")
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))

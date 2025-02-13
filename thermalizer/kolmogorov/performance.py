@@ -87,9 +87,13 @@ def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fals
                     therming_counts[idx,aa]=counts[bb]
             if noise_limit:
                 if preds.max()>noise_limit:
-                    print("breaking due to noise limit")
-                    break
+                    print("breaking due to noise limit at traj %d" % preds.argmax().item())
+                    ## Truncate tensors to cutoff length
+                    state_vector=state_vector[:,:aa+1]
+                    noise_classes=noise_classes[:,:aa+1]
+                    therming_counts=therming_counts[:,:aa+1]
     state_vector=state_vector.to("cpu")
+
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
     return state_vector, enstrophies, noise_classes, therming_counts
 
@@ -256,6 +260,12 @@ class EmulatorRollout():
             self.mse_auto[:,aa]=torch.mean(loss,dim=(1,2))
             loss=self.mseloss(self.test_suite[:,aa],self.emu[:,aa])
             self.mse_emu[:,aa]=torch.mean(loss,dim=(1,2))
+            
+            if self.mse_emu[:,aa].min()>10000:
+                break
+        
+        self.emu=self.emu[:,:aa,:,:]
+        self.mse_emu=self.mse_emu[:,:aa]
 
     def _KE_spectra(self):
         ## Move to cpu for KE spectra calculation
