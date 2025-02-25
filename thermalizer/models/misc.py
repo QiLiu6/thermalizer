@@ -14,9 +14,7 @@ from torch.utils.data import DataLoader
 
 import thermalizer.models.diffusion as diffusion
 import thermalizer.models.cnn as cnn
-import thermalizer.models.unet as unet
 import thermalizer.models.unet_modern as munet
-import thermalizer.models.aunet as aunet
 import thermalizer.models.drn as drn
 import thermalizer.models.fno as fno
 
@@ -147,12 +145,8 @@ def load_model(file_string):
 
     ## Check which model type to construct
     try:
-        if model_dict["config"]["model_type"]=="Unet":
-            model=unet.Unet(model_dict["config"])
-        elif model_dict["config"]["model_type"]=="ModernUnet":
+        if model_dict["config"]["model_type"]=="ModernUnet":
             model=munet.ModernUnet(model_dict["config"])
-        elif model_dict["config"]["model_type"]=="AUnet":
-            model=aunet.AUnet(model_dict["config"])
         elif model_dict["config"]["model_type"]=="ModernUnetRegressor":
             model=munet.ModernUnetRegressor(model_dict["config"])
         elif model_dict["config"]["model_type"]=="DRN":
@@ -179,14 +173,8 @@ def load_diffusion_model(file_string):
             model_dict = pickle.load(fp)
         else:
             model_dict = CPU_Unpickler(fp).load()
-    if model_dict["config"]["model_type"]=="Unet":
-        model_cnn=unet.Unet(model_dict["config"])
-        model_cnn.load_state_dict(model_dict["state_dict"])
-    elif model_dict["config"]["model_type"]=="ModernUnet":
+    if model_dict["config"]["model_type"]=="ModernUnet":
         model_cnn=munet.ModernUnet(model_dict["config"])
-        model_cnn.load_state_dict(model_dict["state_dict"])
-    elif model_dict["config"]["model_type"]=="AUnet":
-        model_cnn=aunet.AUnet(model_dict["config"])
         model_cnn.load_state_dict(model_dict["state_dict"])
     elif model_dict["config"]["model_type"]=="ModernUnetRegressor":
         model_cnn=munet.ModernUnetRegressor(model_dict["config"])
