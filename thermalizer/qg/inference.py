@@ -340,7 +340,6 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermal
     wandb.log({"Noise classes": wandb.Image(fig_noise_classes)})
     plt.close()
 
-    #ss_emu,nan_emu=util.spectral_similarity(ke_ic[1],ke_emu[1]) ## This bugs out due to infs/nan
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
 
     wandb.run.summary["algo time (seconds)"]=algo_time

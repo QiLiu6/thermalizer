@@ -316,11 +316,9 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     wandb.log({"Noise classes": wandb.Image(fig_noise_classes)})
     plt.close()
 
-    ss_emu,nan_emu=util.spectral_similarity(ke_ic[1],ke_emu[1])
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
 
     wandb.run.summary["algo time (seconds)"]=algo_time
-    wandb.run.summary["spectral similarity emulator"]=ss_emu
     wandb.run.summary["nans emulator"]=nan_emu
     wandb.run.summary["spectral similarity thermalized"]=ss_therm
     wandb.run.summary["nans thermalized"]=nan_therm
