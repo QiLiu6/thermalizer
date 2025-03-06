@@ -92,6 +92,7 @@ def therm_algo(ics,emu,therm,n_steps=-1,start=10,stop=4,forward=True,silent=Fals
                     state_vector=state_vector[:,:aa+1]
                     noise_classes=noise_classes[:,:aa+1]
                     therming_counts=therming_counts[:,:aa+1]
+                    break
     state_vector=state_vector.to("cpu")
 
     enstrophies=(abs(state_vector**2).sum(axis=(2,3)))
