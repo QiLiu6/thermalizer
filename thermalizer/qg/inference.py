@@ -112,6 +112,12 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermal
     algo_time=end-start
     print("Algo time =", algo_time)
 
+    ## If there has been a break, note this for wandb logger
+    if len(algo[0][1])<(config["steps"]-1):
+        exited=True
+    else:
+        exited=False
+
     ## Save tensors before generating figures, to avoid losing data if there's a crash
     if solo_run and save:
         for aa,em in enumerate(emu):
@@ -342,6 +348,7 @@ def therm_inference_qg(identifier,start,stop,steps,forward_diff,emulator,thermal
 
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
 
+    wandb.run.summary["exited"]=exited ## Bool if run exited early
     wandb.run.summary["algo time (seconds)"]=algo_time
     wandb.run.summary["spectral similarity thermalized"]=ss_therm
     wandb.run.summary["nans thermalized"]=nan_therm

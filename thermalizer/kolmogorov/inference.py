@@ -135,6 +135,12 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     algo_time=end-start
     print("Algo time =", algo_time)
 
+    ## If there has been a break, note this for wandb logger
+    if len(algo[0][1])<(config["steps"]-1):
+        exited=True
+    else:
+        exited=False
+
     ## Save tensors before generating figures, to avoid losing data if there's a crash
     if solo_run and save:
         ## Tensors are here: https://github.com/Chris-Pedersen/thermalizer/blob/main/thermalizer/kolmogorov/performance.py
@@ -318,6 +324,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
 
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
 
+    wandb.run.summary["exited"]=exited ## Bool if run exited early
     wandb.run.summary["algo time (seconds)"]=algo_time
     wandb.run.summary["spectral similarity thermalized"]=ss_therm
     wandb.run.summary["nans thermalized"]=nan_therm
