@@ -196,7 +196,7 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
 
     ## KE figure
     ke_steps=12
-    ke_indices=np.linspace(1,config["steps"]-1,ke_steps,dtype=int)
+    ke_indices=np.linspace(1,len(algo[0][1])-1,ke_steps,dtype=int)
     ## Now get KE and plot
     ## Get spectra to confirm
     ke_ic=util.get_ke_batch(test_suite["data"][:,0],grid)
@@ -319,7 +319,6 @@ def therm_inference(identifier,start,stop,steps,forward_diff=True,
     ss_therm,nan_therm=util.spectral_similarity(ke_ic[1],ke_therm[1])
 
     wandb.run.summary["algo time (seconds)"]=algo_time
-    wandb.run.summary["nans emulator"]=nan_emu
     wandb.run.summary["spectral similarity thermalized"]=ss_therm
     wandb.run.summary["nans thermalized"]=nan_therm
     wandb.run.summary["total_therm"]=algo[-1].sum()
