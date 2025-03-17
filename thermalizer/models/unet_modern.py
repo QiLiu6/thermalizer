@@ -253,10 +253,7 @@ class ModernUnet(nn.Module):
         n_blocks (int): Number of residual blocks in each resolution
     """
 
-    def __init__(
-        self,
-        config
-    ) -> None:
+    def __init__(self,config) -> None:
         super().__init__()
         self.config=config
         self.config["model_type"]="ModernUnet"
@@ -399,6 +396,13 @@ class ModernUnet(nn.Module):
         print("Model saved as %s" % save_string)
         return
 
+class UnifiedUnet(ModernUnet):
+    def __init__(self,config):
+        super().__init__()
+        self.config["model_type"]="UnifiedUnet"
+    
+    
+    
 class ModernUnetRegressor(ModernUnet):
     """ Inherit the Modern Unet, but add a scalar output
         to perform regression, by overriding forward method """

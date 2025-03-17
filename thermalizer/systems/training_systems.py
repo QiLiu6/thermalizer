@@ -164,7 +164,179 @@ class Trainer:
     def run(self):
         raise NotImplementedError("Implemented by subclass")
 
+class UnifiedTrainer(Trainer):
+    def __init__(self,config):
+        super().__init__(config)
+        self.softmax = nn.Softmax(dim=1)
 
+        if self.config["ddp"]==True:
+            raise NotImplementedError
+
+    def _prep_model(self):
+        model_unet=misc.model_factory(self.config).to(self.gpu_id)
+        self.model=diffusion.Diffusion(self.config, model=model_unet).to(self.gpu_id)
+        self.config["cnn learnable parameters"]=sum(p.numel() for p in self.model.parameters())
+        if self.config.get("ema_decay"):
+            self.ema=misc.ExponentialMovingAverage(self.model,decay=self.config.get("ema_decay"))
+            self.ema.register()
+
+    def load_checkpoint(self,file_string,resume_wandb=True):
+        """ Load checkpoint from saved file """
+        with open(file_string, 'rb') as fp:
+            model_dict = pickle.load(fp)
+        assert model_dict["config"]==self.config, "Configs not the same"
+        self.model=misc.load_diffusion_model(file_string).to(self.gpu_id)
+        self._prep_optimizer()
+        self.optimizer.load_state_dict(model_dict['optimizer_state_dict'])
+        self.epoch=model_dict["epoch"]
+        self.training_step=model_dict["training_step"]
+
+        if self.wandb_init==False and resume_wandb:
+            self.resume_wandb()
+
+        return
+
+    def training_loop(self):
+        """ Training loop for unified emulator """
+        self.model.train()
+        for j,image in enumerate(self.train_loader):
+            image=image.to(self.gpu_id)
+            self.optimizer.zero_grad()
+            noise=torch.randn_like(image).to(self.gpu_id)
+            pred,_,t,pred_level=self.model(image,noise,True)
+            loss=self.criterion(pred,noise)
+            loss.backward()
+
+            self.optimizer.step()
+            if self.scheduler:
+                self.scheduler.step()
+
+            if self.logging and (self.training_step%self.log_freq==0):
+                log_dic={}
+                log_dic["train_loss"]=loss.item()
+                log_dic["training_step"]=self.training_step
+                if self.scheduler:
+                    log_dic["lr"]=self.scheduler.get_last_lr()[-1]
+                wandb.log(log_dic)
+            self.training_step+=1
+
+            if self.ema:
+                self.ema.update()
+
+        return loss
+
+    def valid_loop(self):
+        raise NotImplementedError("Do not have a validation loop for thermalizer")
+
+    def save_checkpoint(self, checkpoint_string):
+        """ Checkpoint model and optimizer """
+
+        save_dict={
+                    'epoch': self.epoch,
+                    'training_step': self.training_step,
+                    'state_dict': self.model.model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'config':self.config,
+                    }
+        with open(checkpoint_string, 'wb') as handle:
+            pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
+    def test_samples(self):
+        ####### Classifier test
+        self.model.eval()
+
+        if self.ema:
+            self.ema.apply_shadow()
+            
+        samples=self.model.sampling(40)
+
+        if samples.isnan().any():
+            print("Samples have nans, ignoring plot routines")
+            return
+
+        if self.config["PDE"]=="Kolmogorov":
+            samples_fig=plt.figure(figsize=(18, 9))
+            plt.suptitle("Samples after %d epochs" % self.epoch)
+            for i in range(40):
+                plt.subplot(5, 8, 1 + i)
+                plt.axis('off')
+                plt.imshow(samples[i].squeeze(0).data.cpu().numpy(),
+                        cmap=sns.cm.icefire)
+                plt.colorbar()
+            plt.tight_layout()
+            wandb.log({"Samples":wandb.Image(samples_fig)})
+            plt.close()
+            
+            hist_figure=plt.figure()
+            plt.suptitle("Sampled distribution after %d epochs" % self.epoch)
+            plt.hist(samples.flatten().cpu(),bins=1000);
+            wandb.log({"Hist":wandb.Image(hist_figure)})
+            plt.close()
+        
+        else:
+            samples_fig_u=plt.figure(figsize=(18, 9))
+            plt.suptitle("Samples after %d epochs, upper layer" % self.epoch)
+            for i in range(40):
+                plt.subplot(5, 8, 1 + i)
+                plt.axis('off')
+                plt.imshow(samples[i][0].squeeze(0).data.cpu().numpy(),
+                        cmap=sns.cm.icefire)
+                plt.colorbar()
+            plt.tight_layout()
+            wandb.log({"Samples Upper":wandb.Image(samples_fig_u)})
+            plt.close()
+            
+            samples_fig_l=plt.figure(figsize=(18, 9))
+            plt.suptitle("Samples after %d epochs, upper layer" % self.epoch)
+            for i in range(40):
+                plt.subplot(5, 8, 1 + i)
+                plt.axis('off')
+                plt.imshow(samples[i][1].squeeze(0).data.cpu().numpy(),
+                        cmap=sns.cm.icefire)
+                plt.colorbar()
+            plt.tight_layout()
+            wandb.log({"Samples Lower":wandb.Image(samples_fig_l)})
+            plt.close()
+            
+            hist_figure=plt.figure()
+            plt.suptitle("Sampled distribution after %d epochs" % self.epoch)
+            plt.hist(samples[:,0].flatten().cpu(),bins=1000,alpha=0.4,label="Upper layer");
+            plt.hist(samples[:,1].flatten().cpu(),bins=1000,alpha=0.4,label="Lower layer");
+            plt.legend()
+            wandb.log({"Hist":wandb.Image(hist_figure)})
+            plt.close()
+
+        if self.ema:
+            self.ema.restore()
+
+    def run(self,epochs=None):
+        if self.logging and self.wandb_init==False:
+            self.init_wandb()
+            self.model.model.config=self.config ## Update Unet config too, missed in parent call
+
+        if epochs:
+            max_epochs=epochs
+        else:
+            max_epochs=self.config["optimization"]["epochs"]
+
+        for epoch in range(self.epoch,max_epochs+1):
+            self.epoch=epoch
+            print("Training at epoch", self.epoch)
+            self.training_loop()
+            self.test_samples()
+            self.save_checkpoint(self.config["save_path"]+"/checkpoint_last.p")
+            if self.ema:
+                self.ema.apply_shadow()
+                self.save_checkpoint(self.config["save_path"]+"/checkpoint_last_ema.p")
+                self.ema.restore()
+
+        self.test_classifier()
+            
+        print("DONE on rank", self.gpu_id)
+        return
+    
+    
 class ResidualEmulatorTrainer(Trainer):
     """ Residual residual emulator - emulates residuals
         with loss defined on residuals at each timestep """
@@ -1105,3 +1277,4 @@ class RefinerTrainer(Trainer):
                     self.ema.restore()
         print("DONE on rank", self.gpu_id)
         return
+
