@@ -1,0 +1,11 @@
+Metadata-Version: 2.2
+Name: thermalizer
+Version: 0.0.1
+Summary: Thermalizer
+Home-page: https://github.com/QiLiu6/thermalizer_singularity.git
+Author: Chris Pedersen
+Author-email: c.pedersen@nyu.edu
+Dynamic: author
+Dynamic: author-email
+Dynamic: home-page
+Dynamic: summary
