@@ -374,9 +374,7 @@ class ModernUnet(nn.Module):
             else:
                 # Get the skip connection from first half of U-Net and concatenate
                 s = h.pop()
-                print("s size:"+ str( s.shape))
                 x = torch.cat((x, s), dim=1)
-                print("x size:"+ str( x.shape))
                 x = m(x,t)
 
         x = self.final(self.activation(self.norm(x)))
