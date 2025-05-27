@@ -4,6 +4,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=10
 #SBATCH --gres=gpu:1
+#SBATCH --constraint="a100|h100"
 #SBATCH --mem=128GB
 #SBATCH --output=slurm_%j.out
 #SBATCH --mail-type=END
