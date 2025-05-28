@@ -336,7 +336,6 @@ class ResidualEmulatorTrainer(Trainer):
         """ Load checkpoint from saved file """
         with open(file_string, 'rb') as fp:
             model_dict = pickle.load(fp)
-        assert model_dict["config"]==self.config, "Configs not the same"
         self.model=misc.load_model(file_string).to(self.gpu_id)
         self.epoch=model_dict["epoch"]
         self.training_step=model_dict["training_step"]
