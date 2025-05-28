@@ -38,11 +38,11 @@ config["optimization"]["scheduler_step"]=100000
 config["optimization"]["scheduler_gamma"]=0.5
 
 #if training from checkpoint uncomment this
-checkpoint_string = "/scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250526_223850-r12kgbg1/files/checkpoint_last.p"
-trainer = training_systems.trainer_from_checkpoint(checkpoint_string)
-trainer.config["optimization"]["epochs"]= config["optimization"]["epochs"]
+# checkpoint_string = "/scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250526_223850-r12kgbg1/files/checkpoint_last.p"
+# trainer = training_systems.trainer_from_checkpoint(checkpoint_string)
+# trainer.config["optimization"]["epochs"]= config["optimization"]["epochs"]
 
-# trainer=training_systems.ResidualEmulatorTrainer(config)
+trainer=training_systems.ResidualEmulatorTrainer(config)
 trainer.run()
 trainer.performance()
 wandb.finish()
