@@ -1,0 +1,12 @@
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: ql2221 (qiliu2221) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.7
+wandb: Run data is saved locally in /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250528_164436-r12kgbg1
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Resuming run dulcet-grass-56
+wandb: ⭐️ View project at https://wandb.ai/qiliu2221/thermalizer
+wandb: 🚀 View run at https://wandb.ai/qiliu2221/thermalizer/runs/r12kgbg1
+Prep data
+Prep model
+Prep optimizer
+Saving new checkpoint with improved validation loss at /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250526_223850-r12kgbg1/files/checkpoint_best.p
