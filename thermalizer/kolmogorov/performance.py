@@ -6,7 +6,10 @@ import seaborn as sns
 from scipy.stats import pearsonr
 import matplotlib.animation as animation
 from IPython.display import HTML
-import thermalizer.kolmogorov.util as util
+import os
+import sys
+sys.path.append('/home/ql2221/Projects/thermalizer/thermalizer/kolmogorov')
+import util
 from tqdm import tqdm
 
 

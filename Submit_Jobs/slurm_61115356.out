@@ -10,3 +10,32 @@ Prep data
 Prep model
 Prep optimizer
 Saving new checkpoint with improved validation loss at /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250526_223850-r12kgbg1/files/checkpoint_best.p
+Saving new checkpoint with improved validation loss at /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250526_223850-r12kgbg1/files/checkpoint_best.p
+Saving new checkpoint with improved validation loss at /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250526_223850-r12kgbg1/files/checkpoint_best.p
+Saving new checkpoint with improved validation loss at /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250526_223850-r12kgbg1/files/checkpoint_best.p
+wandb:                                                                                
+wandb: 
+wandb: Run history:
+wandb:               lr ██████████████████████████████▁▁▁▁▁▁▁▁▁▁
+wandb:        n_rollout ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb: train_loss_resid ▁▆▂▃▆▂▃▃▃█▃▂▁▃▄▅▂▃▃▄▂▂▄▄▅▃▃▃▇▃▂▅▅▃▆▃▂▃▄▃
+wandb: train_loss_state ▅▇▆▇▃▆▆▄█▃▄▅▄▆▅▇▅▆▅▂▆▅▅▄▄▃▂▅▅▅▃▁▄▄▅▄▅▆▃▄
+wandb:    training_step ▁▁▁▁▂▂▂▂▂▂▂▃▃▃▃▃▃▃▄▄▅▅▅▆▆▆▆▆▆▇▇▇▇▇▇█████
+wandb: valid_loss_resid ▆▆█▄▃▄▁▁▁
+wandb: valid_loss_state ▅▆█▄▃▄▂▂▁
+wandb: 
+wandb: Run summary:
+wandb:               lr 1e-05
+wandb:        n_rollout 4
+wandb: train_loss_resid 0.0
+wandb: train_loss_state 2e-05
+wandb:    training_step 326568
+wandb: valid_loss_resid 1e-05
+wandb: valid_loss_state 2e-05
+wandb: 
+wandb: 🚀 View run dulcet-grass-56 at: https://wandb.ai/qiliu2221/thermalizer/runs/r12kgbg1
+wandb: ⭐️ View project at: https://wandb.ai/qiliu2221/thermalizer
+wandb: Synced 5 W&B file(s), 3 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250528_164436-r12kgbg1/logs
+Saving new checkpoint with improved validation loss at /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250526_223850-r12kgbg1/files/checkpoint_best.p
+DONE on rank cuda
