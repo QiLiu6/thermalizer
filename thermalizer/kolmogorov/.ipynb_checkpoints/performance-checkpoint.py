@@ -227,6 +227,8 @@ class EmulatorRollout():
         else:
             self.device="cpu"
 
+        self.emu = self.emu.to(self.device)
+
         self._init_metrics()
 
     def _init_metrics(self):
@@ -246,16 +248,16 @@ class EmulatorRollout():
 
     @torch.no_grad()
     def evolve(self):
-        for aa in tqdm(range(1,len(self.test_suite[1])),disable=self.silence):
+        for aa in tqdm(range(1,len(self.test_suite[0])),disable=self.silence):
             ## Step fields forward
             emu_unsq=self.emu[:,aa-1,:,:].unsqueeze(1).to(self.device)
             preds=self.model_emu(emu_unsq)
             #means=torch.mean(preds,axis=(-1,-2)) ## If we wanna do zero-mean, which we don't
             if self.residual:
-                self.emu[:,aa,:,:]=(preds+emu_unsq).squeeze().cpu()
+                self.emu[:,aa,:,:]=(preds+emu_unsq).squeeze()
                 #self.emu[:,aa,:,:]=(preds-means.unsqueeze(1).unsqueeze(1)+emu_unsq).squeeze().cpu()
             else:
-                self.emu[:,aa,:,:]=(preds).squeeze().cpu()
+                self.emu[:,aa,:,:]=(preds).squeeze()
             if self.sigma: ## Add noise if we are running a stochastic trajectory
                 self.emu[:,aa,:,:]+=torch.randn_like(self.emu[:,aa,:,:])*self.sigma
 
