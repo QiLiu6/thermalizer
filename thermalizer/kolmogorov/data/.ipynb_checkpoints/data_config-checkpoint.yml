@@ -1,0 +1,13 @@
+reynolds: 5000       ## Reynolds number
+trajectories: 20     ## Number of training trajectories per simulation
+increment: 5         ## Number of numerical timesteps in a given emulator timestep
+rollout: 5           ## Number of emulator timesteps to train over, i.e. the length of a training rollout
+dt: 0.001            ## Numerical timestep for jax_cfd
+spinup: 10000        ## How many numerical timesteps to run before storing snapshots, also known as spinup phase
+decorr_steps: 1500   ## How many numerical timesteps to seperate training trajectories by
+gridsize: 512        ## Simulation gridsize
+downsample: 8        ## Downsampling factor for emulator fields
+n_sims: 1000         ## Number of training sims to run
+
+
+## Total number of training trajectories generated will be n_sims*trajectories

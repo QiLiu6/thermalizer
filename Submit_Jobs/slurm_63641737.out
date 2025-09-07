@@ -1,0 +1,61 @@
+Prep data
+Prep model
+Prep optimizer
+53286817
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: ql2221 (qiliu2221) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.7
+wandb: Run data is saved locally in /scratch/ql2221/thermalizer_data/wandb_data/wandb/run-20250711_143242-wr0z3tb3
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run trim-mountain-1
+wandb: ⭐️ View project at https://wandb.ai/qiliu2221/icml_thermalizer
+wandb: 🚀 View run at https://wandb.ai/qiliu2221/icml_thermalizer/runs/wr0z3tb3
+Training at epoch 1
+Training at epoch 2
+Training at epoch 3
+Training at epoch 4
+Training at epoch 5
+Training at epoch 6
+Training at epoch 7
+Training at epoch 8
+Training at epoch 9
+Training at epoch 10
+Training at epoch 11
+Training at epoch 12
+Training at epoch 13
+Training at epoch 14
+Training at epoch 15
+Training at epoch 16
+Training at epoch 17
+Training at epoch 18
+Training at epoch 19
+Training at epoch 20
+Training at epoch 21
+Training at epoch 22
+Training at epoch 23
+Training at epoch 24
+Training at epoch 25
+Training at epoch 26
+Training at epoch 27
+Training at epoch 28
+Training at epoch 29
+Training at epoch 30
+Training at epoch 31
+Training at epoch 32
+Training at epoch 33
+Training at epoch 34
+Training at epoch 35
+Training at epoch 36
+Training at epoch 37
+Training at epoch 38
+Training at epoch 39
+Training at epoch 40
+Training at epoch 41
+Training at epoch 42
+Training at epoch 43
+Training at epoch 44
+Training at epoch 45
+Training at epoch 46
+Training at epoch 47
+Training at epoch 48
+slurmstepd: error: *** JOB 63641737 ON ga006 CANCELLED AT 2025-07-12T14:32:27 DUE TO TIME LIMIT ***

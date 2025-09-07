@@ -28,7 +28,7 @@ def run_emu(ics,emu,therm=None,n_steps=1000,silent=False,sigma=None):
     ## Set up state and diagnostic tensors
     state_vector=torch.zeros((len(ics),n_steps,64,64),device="cuda")
     ## Set ICs
-    state_vector[:,0]=ics
+    state_vector[:,0:1]=ics
     state_vector=state_vector.to("cuda")
     noise_classes=None
     if therm:
@@ -428,7 +428,6 @@ class KolmogorovAnimation():
         
         ## Convert q to standardised q
         x=torch.tensor(self.pred).float().unsqueeze(0).unsqueeze(0)
-
         x=self.model(x)
         
         with torch.no_grad():
