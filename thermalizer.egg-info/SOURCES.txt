@@ -5,6 +5,8 @@ thermalizer.egg-info/PKG-INFO
 thermalizer.egg-info/SOURCES.txt
 thermalizer.egg-info/dependency_links.txt
 thermalizer.egg-info/top_level.txt
+thermalizer/dataset/__init__.py
+thermalizer/dataset/datasets.py
 thermalizer/kolmogorov/__init__.py
 thermalizer/kolmogorov/inference.py
 thermalizer/kolmogorov/performance.py
